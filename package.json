@@ -1,0 +1,22 @@
+{
+  "name": "dervaish",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @dervaish/web",
+    "dev:api": "npm run dev -w @dervaish/api",
+    "dev:mobile": "npm run dev -w @dervaish/mobile",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "npm run lint --workspaces"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.2"
+  }
+}
+

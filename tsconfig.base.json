@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@dervaish/domain": [
+        "packages/domain/src"
+      ],
+      "@dervaish/validation": [
+        "packages/validation/src"
+      ],
+      "@dervaish/api-client": [
+        "packages/api-client/src"
+      ],
+      "@dervaish/playback-core": [
+        "packages/playback-core/src"
+      ]
+    }
+  }
+}
+

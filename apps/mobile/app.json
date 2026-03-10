@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Dervaish",
+    "slug": "dervaish",
+    "scheme": "dervaish",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  }
+}
+
