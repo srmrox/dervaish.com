@@ -1,0 +1,6 @@
+moviepy==1.0.3
+numpy==2.0.1
+pandas==2.2.2
+pillow==10.4.0
+imageio-ffmpeg==0.5.1
+

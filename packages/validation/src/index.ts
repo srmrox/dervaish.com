@@ -12,6 +12,28 @@ export const lyricsDocumentSchema = z.object({
   lines: z.array(lyricsLineSchema).min(1)
 });
 
+export const lyricLanguageSchema = z.object({
+  code: z.string().min(2),
+  name: z.string().min(2),
+  direction: z.enum(["ltr", "rtl"]),
+  role: z.enum(["original", "translation", "transliteration"]),
+  isPublished: z.boolean().default(false)
+});
+
+export const lyricSegmentSchema = z.object({
+  id: z.string().optional(),
+  startMs: z.number().int().nonnegative(),
+  endMs: z.number().int().positive(),
+  textByLanguageId: z.record(z.string())
+}).refine((segment) => segment.endMs > segment.startMs, {
+  message: "endMs must be greater than startMs",
+  path: ["endMs"]
+});
+
+export const lyricSegmentsUpdateSchema = z.object({
+  segments: z.array(lyricSegmentSchema).min(1)
+});
+
 export const sourceRatingSchema = z.object({
   id: z.string(),
   kind: z.enum(["editorial", "community"]),
@@ -23,7 +45,7 @@ export const sourceRatingSchema = z.object({
 });
 
 export const citationSchema = z.object({
-  id: z.string(),
+  id: z.string().optional(),
   title: z.string().min(1),
   sourceType: z.enum(["interview", "book", "field-recording", "website", "manuscript"]),
   author: z.string().optional(),
@@ -52,11 +74,55 @@ export const archiveRecordSchema = z.object({
 export const submissionCreateSchema = z.object({
   title: z.string().min(3),
   submitterId: z.string().min(1),
+  voice: z.string().min(1).optional(),
+  writer: z.string().min(1).optional(),
+  notes: z.string().max(5000).optional(),
+  sourceName: z.string().max(500).optional(),
   mediaUrl: z.string().url().optional(),
-  notes: z.string().max(5000).optional()
+  citations: z.array(citationSchema).default([])
+});
+
+export const submissionPatchSchema = submissionCreateSchema
+  .omit({ submitterId: true })
+  .partial()
+  .extend({
+    moderationStatus: z.enum(["draft", "submitted", "under_review", "changes_requested", "approved", "rejected", "published"]).optional()
+  });
+
+export const submissionMediaCreateSchema = z.object({
+  role: z.enum(["source_audio", "source_video", "cover_image", "supporting_file"]),
+  originalFilename: z.string().min(1),
+  mimeType: z.string().min(3),
+  sizeBytes: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative().default(0),
+  checksumSha256: z.string().min(8).optional(),
+  storageKey: z.string().min(1).optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional()
+});
+
+export const submissionReviewSchema = z.object({
+  status: z.enum(["under_review", "changes_requested", "approved", "rejected"]),
+  note: z.string().min(1).max(2000).optional()
+});
+
+export const videoGenerationJobCreateSchema = z.object({
+  submissionId: z.string().optional(),
+  trackId: z.string().optional(),
+  sourceMediaAssetId: z.string().min(1),
+  sourceMode: z.enum(["audio_visualizer", "video_overlay"]),
+  layoutId: z.string().min(1).default("landscape-1"),
+  resolution: z.enum(["720p", "1080p", "4k"]).default("1080p"),
+  visibleLanguageIds: z.array(z.string().min(1)).min(1).max(3),
+  title: z.string().min(1),
+  voice: z.string().optional(),
+  writer: z.string().optional(),
+  imageAssetIds: z.array(z.string()).default([])
+}).refine((input) => Boolean(input.submissionId) !== Boolean(input.trackId), {
+  message: "Provide exactly one of submissionId or trackId",
+  path: ["submissionId"]
 });
 
 export const anonymousSessionSchema = z.object({
   fingerprint: z.string().min(6)
 });
-

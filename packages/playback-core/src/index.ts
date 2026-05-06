@@ -1,4 +1,4 @@
-import type { DeviceSyncState, OfflinePackage, Track } from "@dervaish/domain";
+import type { DeviceSyncState, LyricSegment, LyricSet, OfflinePackage, Track } from "@dervaish/domain";
 
 export interface OfflinePlan {
   packageId: string;
@@ -27,13 +27,30 @@ export function buildOfflinePlan(
   };
 }
 
-export function activeLyricLine(track: Track, positionMs: number): string | null {
-  const lines = track.lyrics.lines;
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    if (positionMs >= lines[index].atMs) {
-      return lines[index].text;
+export function activeLyricSegment(lyricSet: LyricSet, positionMs: number): LyricSegment | null {
+  for (let index = lyricSet.segments.length - 1; index >= 0; index -= 1) {
+    const segment = lyricSet.segments[index];
+    if (positionMs >= segment.startMs && positionMs < segment.endMs) {
+      return segment;
     }
   }
   return null;
 }
 
+export function activeLyricText(lyricSet: LyricSet, positionMs: number, languageId = lyricSet.languages[0]?.id ?? ""): string | null {
+  const segment = activeLyricSegment(lyricSet, positionMs);
+  if (!segment) return null;
+  return segment.textByLanguageId[languageId] ?? null;
+}
+
+export function activeLyricLine(track: Track, positionMs: number): string | null {
+  return activeLyricText(track.lyricSet, positionMs, track.lyricSet.languages[0]?.id);
+}
+
+export function selectRenderableLanguages(lyricSet: LyricSet, requestedLanguageIds: string[]) {
+  const requested = requestedLanguageIds
+    .map((id) => lyricSet.languages.find((language) => language.id === id))
+    .filter((language): language is NonNullable<typeof language> => Boolean(language));
+
+  return requested.slice(0, 3);
+}
