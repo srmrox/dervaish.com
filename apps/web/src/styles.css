@@ -44,10 +44,35 @@ button {
   padding: 11px 18px;
 }
 
+button.as-link,
+button.text-link,
+button.row-main {
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+button.text-link {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+button.strong-link {
+  color: var(--text);
+  font-weight: 850;
+}
+
 button.secondary {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
+}
+
+button.compact-button {
+  padding: 8px 11px;
+  font-size: 0.86rem;
 }
 
 input,
@@ -88,6 +113,10 @@ textarea {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.brand-block.as-link {
+  width: 100%;
 }
 
 .brand-mark {
@@ -171,7 +200,7 @@ textarea {
   gap: 22px;
 }
 
-.release-header {
+.collection-header {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   align-items: end;
@@ -180,7 +209,7 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 
-.release-header img {
+.collection-header img {
   width: 220px;
   aspect-ratio: 1;
   object-fit: cover;
@@ -188,7 +217,7 @@ textarea {
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
 }
 
-.release-header h1,
+.collection-header h1,
 .workflow-header h1,
 .wiki-article h1 {
   margin: 0;
@@ -197,7 +226,7 @@ textarea {
   letter-spacing: 0;
 }
 
-.release-header p,
+.collection-header p,
 .workflow-header p,
 .wiki-article header p,
 .wiki-section p,
@@ -254,7 +283,7 @@ textarea {
 .section-heading,
 .track-row {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 180px 90px;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(190px, 0.85fr) 90px 120px;
   gap: 12px;
   align-items: center;
 }
@@ -273,6 +302,53 @@ textarea {
   color: var(--text);
   text-align: left;
   padding: 12px;
+}
+
+.track-row select {
+  padding: 8px 10px;
+}
+
+.track-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.community-track-row {
+  grid-template-columns: 48px minmax(0, 1fr) minmax(190px, 0.85fr) 120px 120px;
+}
+
+.track-credits,
+.credit-block,
+.credit-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.credit-list > span:first-child {
+  color: var(--muted);
+}
+
+.more-menu {
+  position: relative;
+}
+
+.more-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  min-width: 190px;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b0f0d;
+  padding: 10px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
 }
 
 .track-row.active,
@@ -426,6 +502,49 @@ textarea {
   gap: 8px;
 }
 
+.tab-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tab-row button {
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--soft);
+}
+
+.tab-row button.active {
+  background: var(--green);
+  color: #031006;
+}
+
+.verification-summary,
+.verification-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.verification-summary span,
+.verification-grid span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 8px;
+}
+
+.verification-grid span {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.verification-card {
+  align-items: start;
+}
+
 .playback-bar {
   position: fixed;
   left: 0;
@@ -504,7 +623,7 @@ textarea {
     padding: 18px;
   }
 
-  .release-header,
+  .collection-header,
   .section-heading,
   .track-row,
   .lyric-block,
@@ -514,7 +633,7 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .release-header img {
+  .collection-header img {
     width: 100%;
     max-width: 280px;
   }

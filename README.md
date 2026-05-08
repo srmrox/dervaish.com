@@ -4,6 +4,10 @@ Dervaish is a preservation-oriented media and archive platform with:
 
 - web and mobile clients
 - offline-first audio and video playback
+- user and curated Collections with shareable visibility
+- Reciter and Writer credits linked to profile pages
+- personal listening queues
+- community track requests, track upvotes, and submission verification
 - synced lyrics and embedded metadata support
 - a source-referenced archive with editorial and community trust signals
 - contributor submissions with multilingual timed lyrics
@@ -27,13 +31,44 @@ Dervaish is a preservation-oriented media and archive platform with:
 3. Run the web app with `npm run dev:web`
 4. Run the mobile app with `npm run dev:mobile`
 
-Optional local services for the production path are declared in `docker-compose.yml`:
+Local services for the durable API path are declared in `docker-compose.yml`:
 
 - PostgreSQL for durable catalog/submission data
 - Redis for background job queues
 - MinIO for S3-compatible source and generated media storage
 
-The current API implementation keeps an in-memory repository so the submission, lyrics, and video-generation flows can be exercised without provisioning those services yet.
+The API defaults `DATABASE_URL` to the Docker Compose PostgreSQL connection:
+
+```bash
+postgres://dervaish:dervaish@localhost:5432/dervaish
+```
+
+Set `DATABASE_URL=""` to use the seeded in-memory fallback for local smoke tests or UI work without PostgreSQL.
+
+Run the API smoke tests with:
+
+```bash
+npm run smoke -w @dervaish/api
+```
+
+The smoke tests cover the hard Collection rename, curated Collection labeling, Reciter/Writer track credits, Collection sharing, private ownership checks, personal queue item lifecycle, track requests, track upvotes, and community submission verification.
+
+## Collections and queues
+
+The catalog exposes `collections`, not `releases`. Admin/editor-created Collections render as Curated Collections. User-created Collections can be public or private; private Collections can generate unlisted share-token links.
+
+Personal queues are owner-scoped and available through `/me/queues`. Until real authentication is added, the web app sends `X-Dervaish-User-Id` and `X-Dervaish-Role` headers from the demo role selector.
+
+## Community
+
+Signed-in demo roles (`listener`, `contributor`, `editor`, and `admin`) can:
+
+- post freeform or existing-track requests through `/community/track-requests`
+- toggle request upvotes and catalog track upvotes
+- view the community submission queue at `/community/submissions`
+- verify or dispute submission fields (`writer`, `reciter`, `lyrics`, `source`, and `overall`)
+
+Anonymous users can view public request and track counts, but cannot create requests, vote, or verify submissions.
 
 ## Video generation worker
 

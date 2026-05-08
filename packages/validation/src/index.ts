@@ -65,10 +65,39 @@ export const archiveRecordSchema = z.object({
   editorialNotes: z.string().min(1),
   contributorNotes: z.array(z.string()),
   relatedArtistIds: z.array(z.string()),
-  relatedReleaseIds: z.array(z.string()),
+  relatedCollectionIds: z.array(z.string()),
   relatedTrackIds: z.array(z.string()),
   exportFormats: z.array(z.enum(["json", "jsonld", "csv"])),
   revisionCount: z.number().int().positive()
+});
+
+export const collectionCreateSchema = z.object({
+  title: z.string().min(3).max(160),
+  visibility: z.enum(["public", "private"]).default("private"),
+  artworkUrl: z.string().url().optional(),
+  year: z.number().int().min(0).max(9999).optional(),
+  trackIds: z.array(z.string().min(1)).default([])
+});
+
+export const collectionPatchSchema = collectionCreateSchema.partial();
+
+export const collectionTrackSchema = z.object({
+  trackId: z.string().min(1)
+});
+
+export const trackRequestCreateSchema = z.object({
+  title: z.string().min(3).max(180).optional(),
+  trackId: z.string().min(1).optional(),
+  reciterName: z.string().min(1).max(160).optional(),
+  writerName: z.string().min(1).max(160).optional(),
+  notes: z.string().max(2000).optional()
+}).refine((input) => Boolean(input.title) || Boolean(input.trackId), {
+  message: "Provide a title or trackId",
+  path: ["title"]
+});
+
+export const trackRequestPatchSchema = z.object({
+  status: z.enum(["open", "planned", "fulfilled", "rejected"])
 });
 
 export const submissionCreateSchema = z.object({
@@ -106,6 +135,12 @@ export const submissionReviewSchema = z.object({
   note: z.string().min(1).max(2000).optional()
 });
 
+export const submissionVerificationSchema = z.object({
+  field: z.enum(["writer", "reciter", "lyrics", "source", "overall"]),
+  vote: z.enum(["verify", "dispute"]),
+  note: z.string().max(2000).optional()
+});
+
 export const videoGenerationJobCreateSchema = z.object({
   submissionId: z.string().optional(),
   trackId: z.string().optional(),
@@ -121,6 +156,18 @@ export const videoGenerationJobCreateSchema = z.object({
 }).refine((input) => Boolean(input.submissionId) !== Boolean(input.trackId), {
   message: "Provide exactly one of submissionId or trackId",
   path: ["submissionId"]
+});
+
+export const queueCreateSchema = z.object({
+  title: z.string().min(1).max(120)
+});
+
+export const queueItemCreateSchema = z.object({
+  trackId: z.string().min(1)
+});
+
+export const queueReorderSchema = z.object({
+  itemIds: z.array(z.string().min(1)).min(1)
 });
 
 export const anonymousSessionSchema = z.object({

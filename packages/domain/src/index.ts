@@ -9,6 +9,10 @@ export type LyricLanguageRole = "original" | "translation" | "transliteration";
 export type VideoGenerationStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type VideoGenerationSourceMode = "audio_visualizer" | "video_overlay";
 export type VideoGenerationResolution = "720p" | "1080p" | "4k";
+export type PersonRole = "reciter" | "writer" | "both";
+export type TrackRequestStatus = "open" | "planned" | "fulfilled" | "rejected";
+export type SubmissionVerificationField = "writer" | "reciter" | "lyrics" | "source" | "overall";
+export type SubmissionVerificationVote = "verify" | "dispute";
 
 export interface Provenance {
   sourceName: string;
@@ -101,7 +105,7 @@ export interface ArchiveRecord {
   editorialNotes: string;
   contributorNotes: string[];
   relatedArtistIds: string[];
-  relatedReleaseIds: string[];
+  relatedCollectionIds: string[];
   relatedTrackIds: string[];
   exportFormats: Array<"json" | "jsonld" | "csv">;
   revisionCount: number;
@@ -116,21 +120,37 @@ export interface Artist {
   archiveRecordIds: string[];
 }
 
-export interface Release {
+export interface Person {
+  id: string;
+  name: string;
+  role: PersonRole;
+  bio?: string;
+  origin?: string;
+  archiveRecordIds: string[];
+}
+
+export interface Collection {
   id: string;
   title: string;
-  artistId: string;
-  year: number;
+  ownerUserId: string;
+  createdByRole: UserRole;
+  visibility: Extract<Visibility, "public" | "private">;
+  isCurated: boolean;
   artworkUrl: string;
+  year?: number;
   trackIds: string[];
-  type: "album" | "single" | "playlist";
+  shareToken?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Track {
   id: string;
   title: string;
   artistId: string;
-  releaseId: string;
+  collectionId: string;
+  reciterIds: string[];
+  writerIds: string[];
   durationMs: number;
   visibility: Visibility;
   language: string;
@@ -141,6 +161,8 @@ export interface Track {
   generatedVideoIds: string[];
   availableOffline: boolean;
   provenance: Provenance;
+  upvoteCount?: number;
+  upvotedByCurrentUser?: boolean;
 }
 
 export interface Video {
@@ -180,12 +202,14 @@ export interface Submission {
   media: SubmissionMedia[];
   reviewNotes: string[];
   generatedVideoJobIds: string[];
+  verificationSummary?: SubmissionVerificationSummary;
+  currentUserVerifications?: Partial<Record<SubmissionVerificationField, SubmissionVerification>>;
 }
 
 export interface OfflinePackage {
   id: string;
   targetId: string;
-  targetType: "track" | "release" | "playlist" | "archive-bundle" | "generated-video";
+  targetType: "track" | "collection" | "queue" | "archive-bundle" | "generated-video";
   version: number;
   mediaAssetIds: string[];
   archiveRecordIds: string[];
@@ -227,9 +251,70 @@ export interface VideoGenerationJob {
   completedAt?: string;
 }
 
+export interface UserQueueItem {
+  id: string;
+  queueId: string;
+  trackId: string;
+  position: number;
+  addedAt: string;
+}
+
+export interface UserQueue {
+  id: string;
+  ownerUserId: string;
+  title: string;
+  items: UserQueueItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrackRequest {
+  id: string;
+  title: string;
+  trackId?: string;
+  reciterName?: string;
+  writerName?: string;
+  notes?: string;
+  requesterUserId: string;
+  status: TrackRequestStatus;
+  upvoteCount: number;
+  upvotedByCurrentUser: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrackVote {
+  trackId: string;
+  userId: string;
+  createdAt: string;
+}
+
+export interface TrackRequestVote {
+  requestId: string;
+  userId: string;
+  createdAt: string;
+}
+
+export interface SubmissionVerification {
+  id: string;
+  submissionId: string;
+  verifierUserId: string;
+  field: SubmissionVerificationField;
+  vote: SubmissionVerificationVote;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SubmissionVerificationSummary = Record<SubmissionVerificationField, {
+  verify: number;
+  dispute: number;
+}>;
+
 export interface CatalogSnapshot {
   artists: Artist[];
-  releases: Release[];
+  people: Person[];
+  collections: Collection[];
   tracks: Track[];
   videos: Video[];
   archiveRecords: ArchiveRecord[];
@@ -237,11 +322,13 @@ export interface CatalogSnapshot {
   offlinePackages: OfflinePackage[];
   mediaAssets: MediaAsset[];
   videoGenerationJobs: VideoGenerationJob[];
+  trackRequests: TrackRequest[];
 }
 
 export interface SearchResult {
   artists: Artist[];
-  releases: Release[];
+  people: Person[];
+  collections: Collection[];
   tracks: Track[];
   videos: Video[];
   archiveRecords: ArchiveRecord[];
@@ -375,15 +462,44 @@ export const demoCatalog: CatalogSnapshot = {
       archiveRecordIds: ["archive-oral-history"]
     }
   ],
-  releases: [
+  people: [
     {
-      id: "release-river",
+      id: "person-zulfikar",
+      name: "Zulfikar Ali",
+      role: "reciter",
+      origin: "Sindh, Pakistan",
+      bio: "A devotional reciter represented in the preserved listening catalog.",
+      archiveRecordIds: ["archive-oral-history"]
+    },
+    {
+      id: "person-traditional",
+      name: "Traditional",
+      role: "writer",
+      bio: "Traditional authorship used where the original writer is unknown or collectively transmitted.",
+      archiveRecordIds: ["archive-oral-history"]
+    },
+    {
+      id: "person-jami",
+      name: "Maulana Abdur Rahman Jami",
+      role: "writer",
+      origin: "Herat",
+      bio: "Classical poet and writer associated with devotional verse traditions.",
+      archiveRecordIds: ["archive-oral-history"]
+    }
+  ],
+  collections: [
+    {
+      id: "collection-river",
       title: "Songs for the River Archive",
-      artistId: "artist-abida",
+      ownerUserId: "admin-web",
+      createdByRole: "admin",
+      visibility: "public",
+      isCurated: true,
       year: 2026,
       artworkUrl: "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1200&q=80",
       trackIds: ["track-sindh-river"],
-      type: "album"
+      createdAt: "2026-03-10T08:00:00.000Z",
+      updatedAt: "2026-03-10T08:00:00.000Z"
     }
   ],
   tracks: [
@@ -391,7 +507,9 @@ export const demoCatalog: CatalogSnapshot = {
       id: "track-sindh-river",
       title: "Sindh River at Dusk",
       artistId: "artist-abida",
-      releaseId: "release-river",
+      collectionId: "collection-river",
+      reciterIds: ["person-zulfikar"],
+      writerIds: ["person-traditional", "person-jami"],
       durationMs: 258000,
       visibility: "public",
       language: "sd",
@@ -474,7 +592,7 @@ export const demoCatalog: CatalogSnapshot = {
         "Community suggests a second verse variant from Hyderabad."
       ],
       relatedArtistIds: ["artist-abida"],
-      relatedReleaseIds: ["release-river"],
+      relatedCollectionIds: ["collection-river"],
       relatedTrackIds: ["track-sindh-river"],
       exportFormats: ["json", "jsonld", "csv"],
       revisionCount: 3
@@ -508,9 +626,9 @@ export const demoCatalog: CatalogSnapshot = {
   ],
   offlinePackages: [
     {
-      id: "offline-release-river",
-      targetId: "release-river",
-      targetType: "release",
+      id: "offline-collection-river",
+      targetId: "collection-river",
+      targetType: "collection",
       version: 1,
       mediaAssetIds: ["asset-river-opus"],
       archiveRecordIds: ["archive-oral-history"],
@@ -520,7 +638,22 @@ export const demoCatalog: CatalogSnapshot = {
     }
   ],
   mediaAssets,
-  videoGenerationJobs: []
+  videoGenerationJobs: [],
+  trackRequests: [
+    {
+      id: "track-request-kafi",
+      title: "Kafi by Shah Abdul Latif",
+      reciterName: "Abida Darya Ensemble",
+      writerName: "Shah Abdul Latif Bhittai",
+      notes: "Community members have asked for a clean archival recording with synced lyrics.",
+      requesterUserId: "contributor-web",
+      status: "open",
+      upvoteCount: 0,
+      upvotedByCurrentUser: false,
+      createdAt: "2026-03-10T11:00:00.000Z",
+      updatedAt: "2026-03-10T11:00:00.000Z"
+    }
+  ]
 };
 
 export function searchCatalog(query: string, snapshot: CatalogSnapshot = demoCatalog): SearchResult {
@@ -528,7 +661,8 @@ export function searchCatalog(query: string, snapshot: CatalogSnapshot = demoCat
   if (!q) {
     return {
       artists: snapshot.artists,
-      releases: snapshot.releases,
+      people: snapshot.people,
+      collections: snapshot.collections,
       tracks: snapshot.tracks,
       videos: snapshot.videos,
       archiveRecords: snapshot.archiveRecords
@@ -542,7 +676,8 @@ export function searchCatalog(query: string, snapshot: CatalogSnapshot = demoCat
 
   return {
     artists: snapshot.artists.filter((artist) => includes(artist.name) || artist.genres.some(includes)),
-    releases: snapshot.releases.filter((release) => includes(release.title)),
+    people: snapshot.people.filter((person) => includes(person.name) || includes(person.role) || includes(person.origin ?? "")),
+    collections: snapshot.collections.filter((collection) => includes(collection.title)),
     tracks: snapshot.tracks.filter((track) => includes(track.title) || lyricIncludes(track.lyricSet)),
     videos: snapshot.videos.filter((video) => includes(video.title)),
     archiveRecords: snapshot.archiveRecords.filter((record) => includes(record.title) || includes(record.summary) || record.tags.some(includes))

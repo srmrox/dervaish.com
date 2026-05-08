@@ -4,10 +4,15 @@ import { demoCatalog } from "@dervaish/domain";
 import { activeLyricSegment } from "@dervaish/playback-core";
 
 const track = demoCatalog.tracks[0];
-const release = demoCatalog.releases[0];
+const collection = demoCatalog.collections[0];
 const archive = demoCatalog.archiveRecords[0];
 const submission = demoCatalog.submissions[0];
 const segment = activeLyricSegment(track.lyricSet, 17000);
+const reciters = track.reciterIds.map((id) => demoCatalog.people.find((person) => person.id === id)?.name).filter(Boolean).join(", ");
+const writers = track.writerIds.map((id) => demoCatalog.people.find((person) => person.id === id)?.name).filter(Boolean).join(", ");
+const requestCount = demoCatalog.trackRequests.length;
+const trackUpvotes = track.upvoteCount ?? 0;
+const verificationSummary = submission.verificationSummary?.overall ?? { verify: 0, dispute: 0 };
 
 export default function App() {
   return (
@@ -21,10 +26,12 @@ export default function App() {
 
         <View style={styles.listenCard}>
           <Text style={styles.section}>Listen</Text>
-          <Text style={styles.title}>{release.title}</Text>
+          <Text style={styles.title}>{collection.title}</Text>
           <Text style={styles.body}>
             {track.title} is pinned for offline playback with {track.lyricSet.languages.length} lyric languages and archive context.
           </Text>
+          <Text style={styles.body}>Reciter: {reciters}</Text>
+          <Text style={styles.body}>Writer: {writers}</Text>
           <View style={styles.playbackStrip}>
             <Text style={styles.playButton}>Play</Text>
             <Text style={styles.body}>0:17 / 4:18</Text>
@@ -34,6 +41,9 @@ export default function App() {
         <View style={styles.card}>
           <Text style={styles.section}>Companion</Text>
           <Text style={styles.heading}>{track.title}</Text>
+          <Text style={styles.body}>Curated Collection: {collection.title}</Text>
+          <Text style={styles.body}>Reciter: {reciters}</Text>
+          <Text style={styles.body}>Writer: {writers}</Text>
           <Text style={styles.body}>{archive.title}</Text>
           <View style={styles.activeLyricBlock}>
             <Text style={styles.activeLyric}>{segment?.textByLanguageId[track.lyricSet.languages[0].id]}</Text>
@@ -55,6 +65,15 @@ export default function App() {
               <Text style={styles.pillValue}>{submission.lyricSet.languages.length} languages</Text>
             </View>
           </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.section}>Community</Text>
+          <Text style={styles.heading}>{requestCount} track request queued</Text>
+          <Text style={styles.body}>{track.title} has {trackUpvotes} community upvotes.</Text>
+          <Text style={styles.body}>
+            Overall verification: {verificationSummary.verify} verified / {verificationSummary.dispute} disputed
+          </Text>
         </View>
 
         <View style={styles.adminNotice}>
