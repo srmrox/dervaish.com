@@ -103,12 +103,24 @@ export const trackRequestPatchSchema = z.object({
 export const submissionCreateSchema = z.object({
   title: z.string().min(3),
   submitterId: z.string().min(1),
+  correctionForTrackId: z.string().min(1).optional(),
+  correctionFields: z.array(z.enum(["lyrics", "writer", "reciter", "source", "metadata", "media"])).default([]),
   voice: z.string().min(1).optional(),
   writer: z.string().min(1).optional(),
   notes: z.string().max(5000).optional(),
   sourceName: z.string().max(500).optional(),
   mediaUrl: z.string().url().optional(),
   citations: z.array(citationSchema).default([])
+});
+
+export const correctionSubmissionCreateSchema = z.object({
+  submitterId: z.string().min(1),
+  title: z.string().min(3).optional(),
+  voice: z.string().min(1).optional(),
+  writer: z.string().min(1).optional(),
+  sourceName: z.string().max(500).optional(),
+  notes: z.string().max(5000).optional(),
+  correctionFields: z.array(z.enum(["lyrics", "writer", "reciter", "source", "metadata", "media"])).min(1).default(["lyrics", "metadata"])
 });
 
 export const submissionPatchSchema = submissionCreateSchema
@@ -126,6 +138,9 @@ export const submissionMediaCreateSchema = z.object({
   durationMs: z.number().int().nonnegative().default(0),
   checksumSha256: z.string().min(8).optional(),
   storageKey: z.string().min(1).optional(),
+  sourceUrl: z.string().url().refine((value) => value.startsWith("http://") || value.startsWith("https://"), {
+    message: "sourceUrl must use http or https"
+  }).optional(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional()
 });
@@ -173,3 +188,35 @@ export const queueReorderSchema = z.object({
 export const anonymousSessionSchema = z.object({
   fingerprint: z.string().min(6)
 });
+
+export const lyricPreferenceSchema = z.object({
+  visibleLanguageIds: z.array(z.string().min(1)).min(1)
+});
+
+const publicOrHttpUrlSchema = z.string().min(1).refine((value) => {
+  if (value.startsWith("/")) return !value.startsWith("//");
+  return value.startsWith("http://") || value.startsWith("https://");
+}, {
+  message: "URL must use http(s) or a public absolute path"
+});
+
+export const mediaLibraryCreateSchema = z.object({
+  title: z.string().min(3).max(160),
+  kind: z.enum(["github", "external", "storage"]),
+  baseUrl: publicOrHttpUrlSchema.optional(),
+  isPrimary: z.boolean().default(false)
+});
+
+export const mediaLibraryPatchSchema = mediaLibraryCreateSchema.partial();
+
+export const mediaMirrorCreateSchema = z.object({
+  libraryId: z.string().min(1),
+  trackId: z.string().min(1),
+  kind: z.enum(["audio", "video", "image"]),
+  format: z.enum(["flac", "opus", "aac", "webm", "mp4", "mkv", "mp3", "wav", "jpg", "png"]).optional(),
+  sourceUrl: publicOrHttpUrlSchema,
+  checksumSha256: z.string().min(8).optional(),
+  isAvailable: z.boolean().default(true)
+});
+
+export const mediaMirrorPatchSchema = mediaMirrorCreateSchema.omit({ libraryId: true, trackId: true }).partial();

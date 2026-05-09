@@ -3,12 +3,16 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { withResolvedMediaUrl } from "@dervaish/playback-core";
 import {
   demoCatalog,
   searchCatalog,
   type CatalogSnapshot,
   type Citation,
   type Collection,
+  type CorrectionField,
+  type MediaLibrary,
+  type MediaMirror,
   type LyricLanguage,
   type LyricSegment,
   type MediaAsset,
@@ -34,6 +38,9 @@ const memoryTrackRequests: TrackRequest[] = structuredClone(demoCatalog.trackReq
 const memoryTrackRequestVotes: Array<{ requestId: string; userId: string; createdAt: string }> = [];
 const memoryTrackVotes: Array<{ trackId: string; userId: string; createdAt: string }> = [];
 const memorySubmissionVerifications: SubmissionVerification[] = [];
+const memoryLyricPreferences: Array<{ userId: string; trackId: string; visibleLanguageIds: string[]; updatedAt: string }> = [];
+const memoryMediaLibraries: MediaLibrary[] = structuredClone(demoCatalog.mediaLibraries);
+const memoryMediaMirrors: MediaMirror[] = structuredClone(demoCatalog.mediaMirrors);
 const defaultArtworkUrl = demoCatalog.collections[0]?.artworkUrl ?? "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1200&q=80";
 const databaseUrl = process.env.DATABASE_URL === "" ? "" : (process.env.DATABASE_URL ?? "postgres://dervaish:dervaish@localhost:5432/dervaish");
 const pool = databaseUrl ? new pg.Pool({ connectionString: databaseUrl }) : undefined;
@@ -72,6 +79,48 @@ function mediaKindFromRole(role: SubmissionMedia["role"]): MediaAsset["kind"] {
   if (role === "source_audio") return "audio";
   if (role === "cover_image" || role === "supporting_file") return "image";
   return "video";
+}
+
+function resolveTrackMedia(track: Track): Track {
+  return {
+    ...track,
+    mediaAssets: track.mediaAssets.map(withResolvedMediaUrl)
+  };
+}
+
+function resolveItemMedia<T extends { mediaAssets: MediaAsset[] }>(item: T): T {
+  return {
+    ...item,
+    mediaAssets: item.mediaAssets.map(withResolvedMediaUrl)
+  };
+}
+
+function resolveMediaMirror(mirror: MediaMirror): MediaMirror {
+  if (mirror.urlSource === "storage" && mirror.playbackUrl) return mirror;
+  if (mirror.sourceUrl.startsWith("/")) {
+    return {
+      ...mirror,
+      playbackUrl: mirror.sourceUrl,
+      urlSource: "storage"
+    };
+  }
+  const assetForResolution: MediaAsset = {
+    id: mirror.id,
+    kind: mirror.kind,
+    format: mirror.format ?? (mirror.kind === "video" ? "mp4" : mirror.kind === "audio" ? "mp3" : "jpg"),
+    durationMs: 0,
+    sizeBytes: 0,
+    storageKey: mirror.sourceUrl,
+    sourceUrl: mirror.sourceUrl,
+    isMaster: false,
+    checksumSha256: mirror.checksumSha256
+  };
+  const resolved = withResolvedMediaUrl(assetForResolution);
+  return {
+    ...mirror,
+    playbackUrl: resolved.playbackUrl,
+    urlSource: resolved.urlSource
+  };
 }
 
 function canUseCommunity(user: RequestUser) {
@@ -150,17 +199,48 @@ function rowToSubmissionVerification(row: Record<string, unknown>): SubmissionVe
   };
 }
 
+function rowToMediaLibrary(row: Record<string, unknown>): MediaLibrary {
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    kind: String(row.kind) as MediaLibrary["kind"],
+    baseUrl: row.base_url ? String(row.base_url) : undefined,
+    isPrimary: Boolean(row.is_primary),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString()
+  };
+}
+
+function rowToMediaMirror(row: Record<string, unknown>): MediaMirror {
+  return resolveMediaMirror({
+    id: String(row.id),
+    libraryId: String(row.library_id),
+    trackId: String(row.track_id),
+    kind: String(row.kind) as MediaMirror["kind"],
+    format: row.format ? String(row.format) as MediaMirror["format"] : undefined,
+    sourceUrl: String(row.source_url),
+    playbackUrl: row.playback_url ? String(row.playback_url) : undefined,
+    urlSource: row.url_source ? String(row.url_source) as MediaMirror["urlSource"] : undefined,
+    checksumSha256: row.checksum_sha256 ? String(row.checksum_sha256) : undefined,
+    isAvailable: Boolean(row.is_available),
+    lastCheckedAt: row.last_checked_at ? new Date(String(row.last_checked_at)).toISOString() : undefined,
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString()
+  });
+}
+
 async function ensureDb() {
   if (!pool) return;
   dbReady ??= (async () => {
     const migrationDir = join(dirname(fileURLToPath(import.meta.url)), "../migrations");
     await pool.query(await readFile(join(migrationDir, "001_collections_people_queues.sql"), "utf8"));
     await pool.query(await readFile(join(migrationDir, "002_community_features.sql"), "utf8"));
+    await pool.query(await readFile(join(migrationDir, "003_preferences_corrections_media_libraries.sql"), "utf8"));
     const count = await pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM collections");
     if (Number(count.rows[0]?.count ?? 0) === 0) {
-      for (const collection of demoCatalog.collections) {
-        await upsertCollection(collection);
-      }
+      for (const collection of demoCatalog.collections) await upsertCollection(collection);
+    } else {
+      for (const collection of demoCatalog.collections.filter((item) => item.isCurated)) await upsertCollection(collection);
     }
     const requestCount = await pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM track_requests");
     if (Number(requestCount.rows[0]?.count ?? 0) === 0) {
@@ -184,6 +264,8 @@ async function ensureDb() {
         );
       }
     }
+    for (const library of demoCatalog.mediaLibraries) await upsertMediaLibrary(library);
+    for (const mirror of demoCatalog.mediaMirrors) await upsertMediaMirror(resolveMediaMirror(mirror));
   })();
   await dbReady;
 }
@@ -222,6 +304,57 @@ async function upsertCollection(collection: Collection) {
   );
 }
 
+async function upsertMediaLibrary(library: MediaLibrary) {
+  if (!pool) return;
+  await pool.query(
+    `INSERT INTO media_libraries (id, title, kind, base_url, is_primary, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (id) DO UPDATE SET
+      title = EXCLUDED.title,
+      kind = EXCLUDED.kind,
+      base_url = EXCLUDED.base_url,
+      is_primary = EXCLUDED.is_primary,
+      updated_at = EXCLUDED.updated_at`,
+    [library.id, library.title, library.kind, library.baseUrl ?? null, library.isPrimary, library.createdAt, library.updatedAt]
+  );
+}
+
+async function upsertMediaMirror(mirror: MediaMirror) {
+  if (!pool) return;
+  const resolved = resolveMediaMirror(mirror);
+  await pool.query(
+    `INSERT INTO media_mirrors (
+      id, library_id, track_id, kind, format, source_url, playback_url, url_source, checksum_sha256,
+      is_available, last_checked_at, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    ON CONFLICT (id) DO UPDATE SET
+      kind = EXCLUDED.kind,
+      format = EXCLUDED.format,
+      source_url = EXCLUDED.source_url,
+      playback_url = EXCLUDED.playback_url,
+      url_source = EXCLUDED.url_source,
+      checksum_sha256 = EXCLUDED.checksum_sha256,
+      is_available = EXCLUDED.is_available,
+      last_checked_at = EXCLUDED.last_checked_at,
+      updated_at = EXCLUDED.updated_at`,
+    [
+      resolved.id,
+      resolved.libraryId,
+      resolved.trackId,
+      resolved.kind,
+      resolved.format ?? null,
+      resolved.sourceUrl,
+      resolved.playbackUrl ?? null,
+      resolved.urlSource ?? null,
+      resolved.checksumSha256 ?? null,
+      resolved.isAvailable,
+      resolved.lastCheckedAt ?? null,
+      resolved.createdAt,
+      resolved.updatedAt
+    ]
+  );
+}
+
 async function listDbCollections(user?: RequestUser, includeShareToken?: string) {
   await ensureDb();
   if (!pool) return snapshot.collections;
@@ -239,8 +372,12 @@ export async function getCatalogSnapshot(user?: RequestUser) {
     ...snapshot,
     collections: await listDbCollections(user),
     tracks: await withTrackVotes(snapshot.tracks, user),
+    videos: snapshot.videos.map(resolveItemMedia),
+    mediaAssets: snapshot.mediaAssets.map(withResolvedMediaUrl),
     submissions: await listSubmissions(user),
-    trackRequests: await listTrackRequests(user)
+    trackRequests: await listTrackRequests(user),
+    mediaLibraries: await listMediaLibraries(),
+    mediaMirrors: await listMediaMirrors()
   };
 }
 
@@ -258,7 +395,8 @@ export async function findCollection(id: string, user?: RequestUser, shareToken?
 }
 
 export function findTrack(id: string) {
-  return snapshot.tracks.find((track) => track.id === id);
+  const track = snapshot.tracks.find((track) => track.id === id);
+  return track ? resolveTrackMedia(track) : undefined;
 }
 
 export async function findTrackWithVotes(id: string, user?: RequestUser) {
@@ -272,7 +410,8 @@ export function findPerson(id: string) {
 }
 
 export function findVideo(id: string) {
-  return snapshot.videos.find((video) => video.id === id);
+  const video = snapshot.videos.find((video) => video.id === id);
+  return video ? resolveItemMedia(video) : undefined;
 }
 
 export function findArchiveRecord(id: string) {
@@ -280,7 +419,8 @@ export function findArchiveRecord(id: string) {
 }
 
 export function findMediaAsset(id: string) {
-  return snapshot.mediaAssets.find((asset) => asset.id === id);
+  const asset = snapshot.mediaAssets.find((asset) => asset.id === id);
+  return asset ? withResolvedMediaUrl(asset) : undefined;
 }
 
 export function listOfflinePackages() {
@@ -291,11 +431,181 @@ export async function search(query: string, user?: RequestUser) {
   return searchCatalog(query, await getCatalogSnapshot(user));
 }
 
+export async function findLyricPreference(user: RequestUser, trackId: string) {
+  if (!canUseCommunity(user) || !findTrack(trackId)) return undefined;
+  await ensureDb();
+  if (!pool) {
+    return memoryLyricPreferences.find((preference) => preference.userId === user.id && preference.trackId === trackId) ?? {
+      userId: user.id,
+      trackId,
+      visibleLanguageIds: findTrack(trackId)?.lyricSet.languages.map((language) => language.id) ?? [],
+      updatedAt: now()
+    };
+  }
+  const result = await pool.query("SELECT * FROM lyric_preferences WHERE user_id = $1 AND track_id = $2", [user.id, trackId]);
+  if (result.rows[0]) {
+    const row = result.rows[0];
+    return {
+      userId: String(row.user_id),
+      trackId: String(row.track_id),
+      visibleLanguageIds: Array.isArray(row.visible_language_ids) ? row.visible_language_ids.map(String) : [],
+      updatedAt: new Date(String(row.updated_at)).toISOString()
+    };
+  }
+  return {
+    userId: user.id,
+    trackId,
+    visibleLanguageIds: findTrack(trackId)?.lyricSet.languages.map((language) => language.id) ?? [],
+    updatedAt: now()
+  };
+}
+
+export async function saveLyricPreference(user: RequestUser, trackId: string, visibleLanguageIds: string[]) {
+  const track = findTrack(trackId);
+  if (!canUseCommunity(user) || !track) return undefined;
+  const allowed = new Set(track.lyricSet.languages.map((language) => language.id));
+  const languageIds = [...new Set(visibleLanguageIds)].filter((id) => allowed.has(id));
+  if (!languageIds.length) return undefined;
+  const preference = { userId: user.id, trackId, visibleLanguageIds: languageIds, updatedAt: now() };
+  await ensureDb();
+  if (!pool) {
+    const index = memoryLyricPreferences.findIndex((item) => item.userId === user.id && item.trackId === trackId);
+    if (index >= 0) memoryLyricPreferences[index] = preference;
+    else memoryLyricPreferences.push(preference);
+    return preference;
+  }
+  await pool.query(
+    `INSERT INTO lyric_preferences (user_id, track_id, visible_language_ids, updated_at)
+     VALUES ($1, $2, $3::jsonb, $4)
+     ON CONFLICT (user_id, track_id) DO UPDATE SET
+      visible_language_ids = EXCLUDED.visible_language_ids,
+      updated_at = EXCLUDED.updated_at`,
+    [user.id, trackId, JSON.stringify(languageIds), preference.updatedAt]
+  );
+  return preference;
+}
+
+export async function listMediaLibraries() {
+  await ensureDb();
+  if (!pool) return memoryMediaLibraries;
+  const result = await pool.query("SELECT * FROM media_libraries ORDER BY is_primary DESC, created_at ASC");
+  return result.rows.map(rowToMediaLibrary);
+}
+
+export async function listMediaMirrors(trackId?: string) {
+  await ensureDb();
+  if (!pool) {
+    return memoryMediaMirrors.filter((mirror) => !trackId || mirror.trackId === trackId).map(resolveMediaMirror);
+  }
+  const result = trackId
+    ? await pool.query("SELECT * FROM media_mirrors WHERE track_id = $1 ORDER BY is_available DESC, created_at ASC", [trackId])
+    : await pool.query("SELECT * FROM media_mirrors ORDER BY is_available DESC, created_at ASC");
+  return result.rows.map(rowToMediaMirror);
+}
+
+export async function createMediaLibrary(user: RequestUser, input: {
+  title: string;
+  kind: MediaLibrary["kind"];
+  baseUrl?: string;
+  isPrimary?: boolean;
+}) {
+  if (!isEditor(user)) return undefined;
+  const timestamp = now();
+  const library: MediaLibrary = {
+    id: slugId("library", input.title),
+    title: input.title,
+    kind: input.kind,
+    baseUrl: input.baseUrl,
+    isPrimary: Boolean(input.isPrimary),
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  await ensureDb();
+  if (!pool) memoryMediaLibraries.push(library);
+  else await upsertMediaLibrary(library);
+  return library;
+}
+
+export async function updateMediaLibrary(id: string, user: RequestUser, input: Partial<Pick<MediaLibrary, "title" | "kind" | "baseUrl" | "isPrimary">>) {
+  if (!isEditor(user)) return undefined;
+  const libraries = await listMediaLibraries();
+  const library = libraries.find((item) => item.id === id);
+  if (!library) return undefined;
+  const updated = { ...library, ...input, updatedAt: now() };
+  if (!pool) {
+    const index = memoryMediaLibraries.findIndex((item) => item.id === id);
+    if (index >= 0) memoryMediaLibraries[index] = updated;
+  } else {
+    await upsertMediaLibrary(updated);
+  }
+  return updated;
+}
+
+export async function createMediaMirror(user: RequestUser, input: {
+  libraryId: string;
+  trackId: string;
+  kind: MediaMirror["kind"];
+  format?: MediaMirror["format"];
+  sourceUrl: string;
+  checksumSha256?: string;
+  isAvailable?: boolean;
+}) {
+  if (!isEditor(user) || !findTrack(input.trackId)) return undefined;
+  const libraries = await listMediaLibraries();
+  if (!libraries.some((library) => library.id === input.libraryId)) return undefined;
+  const timestamp = now();
+  const mirror = resolveMediaMirror({
+    id: slugId("mirror", `${input.trackId}-${input.kind}`),
+    libraryId: input.libraryId,
+    trackId: input.trackId,
+    kind: input.kind,
+    format: input.format,
+    sourceUrl: input.sourceUrl,
+    checksumSha256: input.checksumSha256,
+    isAvailable: input.isAvailable ?? true,
+    lastCheckedAt: timestamp,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  });
+  if (!mirror.playbackUrl) return undefined;
+  if (!pool) memoryMediaMirrors.push(mirror);
+  else await upsertMediaMirror(mirror);
+  return mirror;
+}
+
+export async function updateMediaMirror(id: string, user: RequestUser, input: Partial<Pick<MediaMirror, "kind" | "format" | "sourceUrl" | "checksumSha256" | "isAvailable">>) {
+  if (!isEditor(user)) return undefined;
+  const mirrors = await listMediaMirrors();
+  const mirror = mirrors.find((item) => item.id === id);
+  if (!mirror) return undefined;
+  const updated = resolveMediaMirror({ ...mirror, ...input, lastCheckedAt: now(), updatedAt: now() });
+  if (!updated.playbackUrl) return undefined;
+  if (!pool) {
+    const index = memoryMediaMirrors.findIndex((item) => item.id === id);
+    if (index >= 0) memoryMediaMirrors[index] = updated;
+  } else {
+    await upsertMediaMirror(updated);
+  }
+  return updated;
+}
+
+export async function preferredAudioForTrack(track: Track) {
+  const primary = track.mediaAssets.find((asset) => asset.kind === "audio" && asset.format === "opus" && asset.playbackUrl)
+    ?? track.mediaAssets.find((asset) => asset.kind === "audio" && asset.playbackUrl);
+  const mirrors = await listMediaMirrors(track.id);
+  const mirror = mirrors.find((item) => item.isAvailable && item.kind === "audio" && item.playbackUrl);
+  return {
+    asset: primary,
+    audioUrl: primary?.playbackUrl ?? mirror?.playbackUrl,
+    mirrors
+  };
+}
+
 export async function withTrackVotes(tracks: Track[], user?: RequestUser): Promise<Track[]> {
   await ensureDb();
   if (!pool) {
     return tracks.map((track) => ({
-      ...track,
+      ...resolveTrackMedia(track),
       upvoteCount: memoryTrackVotes.filter((vote) => vote.trackId === track.id).length,
       upvotedByCurrentUser: Boolean(user && memoryTrackVotes.some((vote) => vote.trackId === track.id && vote.userId === user.id))
     }));
@@ -312,7 +622,7 @@ export async function withTrackVotes(tracks: Track[], user?: RequestUser): Promi
   const countMap = new Map(counts.rows.map((row) => [row.track_id, Number(row.count)]));
   const currentSet = new Set(currentVotes.rows.map((row) => row.track_id));
   return tracks.map((track) => ({
-    ...track,
+    ...resolveTrackMedia(track),
     upvoteCount: countMap.get(track.id) ?? 0,
     upvotedByCurrentUser: currentSet.has(track.id)
   }));
@@ -729,6 +1039,8 @@ export async function upsertSubmissionVerification(user: RequestUser, submission
 
 export function createSubmission(input: {
   submitterId: string;
+  correctionForTrackId?: string;
+  correctionFields?: CorrectionField[];
   title: string;
   voice?: string;
   writer?: string;
@@ -740,6 +1052,8 @@ export function createSubmission(input: {
   const submission: Submission = {
     id: nextId("submission", snapshot.submissions.length),
     submitterId: input.submitterId,
+    correctionForTrackId: input.correctionForTrackId,
+    correctionFields: input.correctionFields ?? [],
     title: input.title,
     voice: input.voice,
     writer: input.writer,
@@ -768,7 +1082,38 @@ export function createSubmission(input: {
   return submission;
 }
 
-export function updateSubmission(id: string, input: Partial<Pick<Submission, "title" | "voice" | "writer" | "notes" | "sourceName" | "moderationStatus">>) {
+export function createCorrectionSubmission(user: RequestUser, trackId: string, input: {
+  submitterId: string;
+  title?: string;
+  voice?: string;
+  writer?: string;
+  notes?: string;
+  sourceName?: string;
+  correctionFields?: CorrectionField[];
+}) {
+  if (!canUseCommunity(user)) return undefined;
+  const track = findTrack(trackId);
+  if (!track) return undefined;
+  const reciters = track.reciterIds.map(findPerson).filter((person): person is NonNullable<ReturnType<typeof findPerson>> => Boolean(person)).map((person) => person.name).join(", ");
+  const writers = track.writerIds.map(findPerson).filter((person): person is NonNullable<ReturnType<typeof findPerson>> => Boolean(person)).map((person) => person.name).join(", ");
+  const submission = createSubmission({
+    submitterId: input.submitterId,
+    correctionForTrackId: track.id,
+    correctionFields: input.correctionFields?.length ? input.correctionFields : ["lyrics", "metadata"],
+    title: input.title || track.title,
+    voice: input.voice || reciters,
+    writer: input.writer || writers,
+    sourceName: input.sourceName || track.provenance.sourceName,
+    notes: input.notes || `Correction draft for ${track.title}. Update only the fields that need review.`,
+    citations: []
+  });
+  submission.lyricSet = structuredClone(track.lyricSet);
+  submission.lyricSet.id = nextId("lyrics-correction", snapshot.submissions.length);
+  submission.lyricSet.source = "submitted";
+  return submission;
+}
+
+export function updateSubmission(id: string, input: Partial<Pick<Submission, "title" | "voice" | "writer" | "notes" | "sourceName" | "moderationStatus" | "correctionFields">>) {
   const submission = findSubmission(id);
   if (!submission) return undefined;
   Object.assign(submission, input, { updatedAt: now() });
@@ -785,6 +1130,7 @@ export function addSubmissionMedia(
     durationMs: number;
     checksumSha256?: string;
     storageKey?: string;
+    sourceUrl?: string;
     width?: number;
     height?: number;
   }
@@ -799,6 +1145,7 @@ export function addSubmissionMedia(
     durationMs: input.durationMs,
     sizeBytes: input.sizeBytes,
     storageKey: input.storageKey ?? `submissions/${submissionId}/${input.originalFilename}`,
+    sourceUrl: input.sourceUrl,
     isMaster: true,
     originalFilename: input.originalFilename,
     mimeType: input.mimeType,
@@ -815,10 +1162,11 @@ export function addSubmissionMedia(
     uploadedAt: now()
   };
 
-  snapshot.mediaAssets.push(asset);
+  const resolvedAsset = withResolvedMediaUrl(asset);
+  snapshot.mediaAssets.push(resolvedAsset);
   submission.media.push(media);
   submission.updatedAt = now();
-  return { submission, media, asset };
+  return { submission, media, asset: resolvedAsset };
 }
 
 export function addLyricLanguage(submissionId: string, input: Omit<LyricLanguage, "id">) {

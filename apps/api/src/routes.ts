@@ -5,8 +5,14 @@ import {
   collectionCreateSchema,
   collectionPatchSchema,
   collectionTrackSchema,
+  correctionSubmissionCreateSchema,
   lyricLanguageSchema,
+  lyricPreferenceSchema,
   lyricSegmentsUpdateSchema,
+  mediaLibraryCreateSchema,
+  mediaLibraryPatchSchema,
+  mediaMirrorCreateSchema,
+  mediaMirrorPatchSchema,
   queueCreateSchema,
   queueItemCreateSchema,
   queueReorderSchema,
@@ -27,6 +33,9 @@ import {
   cancelVideoGenerationJob,
   createCollection,
   createCollectionShareToken,
+  createCorrectionSubmission,
+  createMediaLibrary,
+  createMediaMirror,
   createQueue,
   createSubmission,
   createTrackRequest,
@@ -40,15 +49,19 @@ import {
   findSubmissionWithVerification,
   findTrack,
   findTrackWithVotes,
+  findLyricPreference,
   findVideo,
   findVideoGenerationJob,
   getCatalogSnapshot,
   listCommunitySubmissions,
+  listMediaLibraries,
+  listMediaMirrors,
   listQueues,
   listOfflinePackages,
   listSubmissions,
   listTrackRequests,
   publishSubmission,
+  preferredAudioForTrack,
   removeCollectionTrack,
   removeQueueItem,
   reorderQueueItems,
@@ -59,8 +72,11 @@ import {
   toggleTrackRequestUpvote,
   toggleTrackUpvote,
   updateTrackRequestStatus,
+  saveLyricPreference,
   upsertSubmissionVerification,
   updateCollection,
+  updateMediaLibrary,
+  updateMediaMirror,
   updateSubmission
 } from "./data-store.js";
 import type { RequestUser } from "./data-store.js";
@@ -146,6 +162,21 @@ export async function registerRoutes(app: FastifyInstance) {
     return track;
   });
 
+  app.get("/catalog/tracks/:id/mirrors", async (request, reply) => {
+    if (!findTrack((request.params as { id: string }).id)) return reply.code(404).send(notFound("Track"));
+    return listMediaMirrors((request.params as { id: string }).id);
+  });
+
+  app.post("/catalog/tracks/:id/corrections", async (request, reply) => {
+    const user = currentUser(request);
+    if (user.role === "anonymous") return reply.code(403).send(forbidden());
+    const parsed = correctionSubmissionCreateSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const submission = createCorrectionSubmission(user, (request.params as { id: string }).id, parsed.data);
+    if (!submission) return reply.code(404).send(notFound("Track"));
+    return reply.code(201).send(submission);
+  });
+
   app.get("/catalog/people/:id", async (request, reply) => {
     const person = findPerson((request.params as { id: string }).id);
     if (!person) return reply.code(404).send(notFound("Person"));
@@ -161,10 +192,13 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!video) {
       return reply.code(404).send(notFound("Video"));
     }
+    const playableAsset = video.mediaAssets.find((asset) => asset.kind === "video" && asset.playbackUrl && ["mp4", "webm"].includes(asset.format))
+      ?? video.mediaAssets.find((asset) => asset.kind === "video" && asset.playbackUrl);
 
     return {
       ...video,
-      streamManifestUrl: `/playback/video/${video.id}/manifest.m3u8`
+      videoUrl: playableAsset?.playbackUrl,
+      streamManifestUrl: playableAsset ? undefined : `/playback/video/${video.id}/manifest.m3u8`
     };
   });
 
@@ -229,6 +263,24 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/me/queues", async (request) => listQueues(currentUser(request)));
 
+  app.get("/me/lyric-preferences/:trackId", async (request, reply) => {
+    const user = currentUser(request);
+    if (user.role === "anonymous") return reply.code(403).send(forbidden());
+    const preference = await findLyricPreference(user, (request.params as { trackId: string }).trackId);
+    if (!preference) return reply.code(404).send(notFound("Track"));
+    return preference;
+  });
+
+  app.put("/me/lyric-preferences/:trackId", async (request, reply) => {
+    const user = currentUser(request);
+    if (user.role === "anonymous") return reply.code(403).send(forbidden());
+    const parsed = lyricPreferenceSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const preference = await saveLyricPreference(user, (request.params as { trackId: string }).trackId, parsed.data.visibleLanguageIds);
+    if (!preference) return reply.code(404).send(notFound("Track or language"));
+    return preference;
+  });
+
   app.post("/me/queues", async (request, reply) => {
     const parsed = queueCreateSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -270,9 +322,14 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.code(404).send(notFound("Track"));
     }
 
+    const audio = await preferredAudioForTrack(track);
+
     return {
       trackId: track.id,
-      preferredAssetId: track.mediaAssets.find((asset) => asset.format === "opus")?.id ?? track.mediaAssets[0]?.id,
+      preferredAssetId: audio.asset?.id,
+      asset: audio.asset,
+      audioUrl: audio.audioUrl,
+      mirrors: audio.mirrors,
       lyricSet: track.lyricSet,
       lyrics: track.lyrics,
       resumePositionMs: 0
@@ -422,5 +479,50 @@ export async function registerRoutes(app: FastifyInstance) {
     const job = cancelVideoGenerationJob((request.params as { id: string }).id);
     if (!job) return reply.code(404).send(notFound("Video generation job"));
     return job;
+  });
+
+  app.get("/admin/media-libraries", async (request, reply) => {
+    const user = currentUser(request);
+    if (user.role !== "editor" && user.role !== "admin") return reply.code(403).send({ error: "Editor or admin role required" });
+    return listMediaLibraries();
+  });
+
+  app.post("/admin/media-libraries", async (request, reply) => {
+    const user = currentUser(request);
+    if (user.role !== "editor" && user.role !== "admin") return reply.code(403).send({ error: "Editor or admin role required" });
+    const parsed = mediaLibraryCreateSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const library = await createMediaLibrary(user, parsed.data);
+    return reply.code(201).send(library);
+  });
+
+  app.patch("/admin/media-libraries/:id", async (request, reply) => {
+    const user = currentUser(request);
+    if (user.role !== "editor" && user.role !== "admin") return reply.code(403).send({ error: "Editor or admin role required" });
+    const parsed = mediaLibraryPatchSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const library = await updateMediaLibrary((request.params as { id: string }).id, user, parsed.data);
+    if (!library) return reply.code(404).send(notFound("Media library"));
+    return library;
+  });
+
+  app.post("/admin/media-mirrors", async (request, reply) => {
+    const user = currentUser(request);
+    if (user.role !== "editor" && user.role !== "admin") return reply.code(403).send({ error: "Editor or admin role required" });
+    const parsed = mediaMirrorCreateSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const mirror = await createMediaMirror(user, parsed.data);
+    if (!mirror) return reply.code(400).send({ error: "Invalid track, library, or media URL" });
+    return reply.code(201).send(mirror);
+  });
+
+  app.patch("/admin/media-mirrors/:id", async (request, reply) => {
+    const user = currentUser(request);
+    if (user.role !== "editor" && user.role !== "admin") return reply.code(403).send({ error: "Editor or admin role required" });
+    const parsed = mediaMirrorPatchSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const mirror = await updateMediaMirror((request.params as { id: string }).id, user, parsed.data);
+    if (!mirror) return reply.code(404).send(notFound("Media mirror"));
+    return mirror;
   });
 }

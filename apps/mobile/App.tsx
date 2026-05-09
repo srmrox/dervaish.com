@@ -1,18 +1,23 @@
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { demoCatalog } from "@dervaish/domain";
-import { activeLyricSegment } from "@dervaish/playback-core";
+import { activeLyricSegment, dirForLanguage, textAlignForDirection } from "@dervaish/playback-core";
 
 const track = demoCatalog.tracks[0];
 const collection = demoCatalog.collections[0];
 const archive = demoCatalog.archiveRecords[0];
 const submission = demoCatalog.submissions[0];
 const segment = activeLyricSegment(track.lyricSet, 17000);
+const originalLanguage = track.lyricSet.languages[0];
+const translationLanguage = track.lyricSet.languages[1];
+const originalDirection = dirForLanguage(originalLanguage);
+const translationDirection = dirForLanguage(translationLanguage);
 const reciters = track.reciterIds.map((id) => demoCatalog.people.find((person) => person.id === id)?.name).filter(Boolean).join(", ");
 const writers = track.writerIds.map((id) => demoCatalog.people.find((person) => person.id === id)?.name).filter(Boolean).join(", ");
 const requestCount = demoCatalog.trackRequests.length;
 const trackUpvotes = track.upvoteCount ?? 0;
 const verificationSummary = submission.verificationSummary?.overall ?? { verify: 0, dispute: 0 };
+const mediaSources = [...new Set([...track.mediaAssets.map((asset) => asset.urlSource ?? "storage"), ...demoCatalog.mediaMirrors.filter((mirror) => mirror.trackId === track.id).map((mirror) => mirror.urlSource ?? "external")])].join(", ");
 
 export default function App() {
   return (
@@ -32,6 +37,7 @@ export default function App() {
           </Text>
           <Text style={styles.body}>Reciter: {reciters}</Text>
           <Text style={styles.body}>Writer: {writers}</Text>
+          <Text style={styles.body}>Media sources: {mediaSources}</Text>
           <View style={styles.playbackStrip}>
             <Text style={styles.playButton}>Play</Text>
             <Text style={styles.body}>0:17 / 4:18</Text>
@@ -44,10 +50,15 @@ export default function App() {
           <Text style={styles.body}>Curated Collection: {collection.title}</Text>
           <Text style={styles.body}>Reciter: {reciters}</Text>
           <Text style={styles.body}>Writer: {writers}</Text>
+          <Text style={styles.body}>Shown languages: {track.lyricSet.languages.slice(0, 2).map((language) => language.name).join(", ")}</Text>
           <Text style={styles.body}>{archive.title}</Text>
           <View style={styles.activeLyricBlock}>
-            <Text style={styles.activeLyric}>{segment?.textByLanguageId[track.lyricSet.languages[0].id]}</Text>
-            <Text style={styles.translation}>{segment?.textByLanguageId[track.lyricSet.languages[1].id]}</Text>
+            <Text style={[styles.activeLyric, { writingDirection: originalDirection, textAlign: textAlignForDirection(originalDirection) }]}>
+              {segment?.textByLanguageId[originalLanguage.id]}
+            </Text>
+            <Text style={[styles.translation, { writingDirection: translationDirection, textAlign: textAlignForDirection(translationDirection) }]}>
+              {segment?.textByLanguageId[translationLanguage.id]}
+            </Text>
           </View>
         </View>
 

@@ -1,9 +1,47 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type ButtonHTMLAttributes, type FormEvent, useEffect, type CSSProperties, type ReactNode, useMemo, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  BookOpenText,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Headphones,
+  Languages,
+  Library,
+  Link2,
+  ListMusic,
+  Maximize2,
+  MessageSquarePlus,
+  MoreHorizontal,
+  Pause,
+  PenLine,
+  Play,
+  Plus,
+  RectangleHorizontal,
+  Save,
+  Send,
+  Share2,
+  Shield,
+  SkipBack,
+  SkipForward,
+  ThumbsUp,
+  Trash2,
+  UploadCloud,
+  UserRound,
+  Users,
+  Video,
+  WandSparkles,
+  X,
+  type LucideIcon
+} from "lucide-react";
 import { DervaishApiClient } from "@dervaish/api-client";
 import {
   demoCatalog,
   type CatalogSnapshot,
   type Collection,
+  type CorrectionField,
+  type MediaLibrary,
+  type MediaMirror,
   type OfflinePackage,
   type Person,
   type Submission,
@@ -14,7 +52,7 @@ import {
   type UserRole,
   type VideoGenerationJob
 } from "@dervaish/domain";
-import { activeLyricSegment } from "@dervaish/playback-core";
+import { activeLyricSegment, dirForLanguage, textAlignForDirection } from "@dervaish/playback-core";
 
 type Workflow = "listen" | "companion" | "submit" | "community" | "admin";
 type Route =
@@ -38,6 +76,35 @@ interface PlaybackState {
 const client = new DervaishApiClient(import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000");
 const roleOptions: UserRole[] = ["anonymous", "listener", "contributor", "editor", "admin"];
 const verificationFields: SubmissionVerificationField[] = ["writer", "reciter", "lyrics", "source", "overall"];
+const correctionFields: CorrectionField[] = ["lyrics", "writer", "reciter", "source", "metadata", "media"];
+const workflowIcons: Record<Workflow, LucideIcon> = {
+  listen: Headphones,
+  companion: BookOpenText,
+  submit: UploadCloud,
+  community: Users,
+  admin: Shield
+};
+
+function Icon({ icon: IconComponent }: { icon: LucideIcon }) {
+  return <IconComponent className="icon" aria-hidden="true" strokeWidth={2.25} />;
+}
+
+function ButtonContent({ icon, children }: { icon: LucideIcon; children: ReactNode }) {
+  return (
+    <span className="button-content">
+      <Icon icon={icon} />
+      <span>{children}</span>
+    </span>
+  );
+}
+
+function IconButton({ icon, label, className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string }) {
+  return (
+    <button {...props} className={`icon-button tooltip-button ${className}`.trim()} aria-label={label} title={label}>
+      <Icon icon={icon} />
+    </button>
+  );
+}
 
 function formatDuration(ms: number) {
   const minutes = Math.floor(ms / 60000);
@@ -70,6 +137,25 @@ function labelForCollection(collection: Collection) {
   return collection.isCurated ? "Curated Collection" : "Collection";
 }
 
+function languageTextProps(language?: { code: string; direction: "ltr" | "rtl" }): { dir: "ltr" | "rtl"; lang?: string; style: CSSProperties } {
+  const direction = dirForLanguage(language);
+  return {
+    dir: direction,
+    lang: language?.code,
+    style: { textAlign: textAlignForDirection(direction), unicodeBidi: "plaintext" }
+  };
+}
+
+function withCatalogDefaults(catalog: CatalogSnapshot): CatalogSnapshot {
+  return {
+    ...catalog,
+    mediaLibraries: catalog.mediaLibraries ?? demoCatalog.mediaLibraries,
+    mediaMirrors: catalog.mediaMirrors ?? demoCatalog.mediaMirrors,
+    trackRequests: catalog.trackRequests ?? [],
+    videoGenerationJobs: catalog.videoGenerationJobs ?? []
+  };
+}
+
 export function App() {
   const [catalog, setCatalog] = useState<CatalogSnapshot>(demoCatalog);
   const [offlinePackages, setOfflinePackages] = useState<OfflinePackage[]>(demoCatalog.offlinePackages);
@@ -78,6 +164,10 @@ export function App() {
   const [trackRequests, setTrackRequests] = useState<TrackRequest[]>(demoCatalog.trackRequests);
   const [jobs, setJobs] = useState<VideoGenerationJob[]>(demoCatalog.videoGenerationJobs);
   const [queues, setQueues] = useState<UserQueue[]>([]);
+  const [visibleLanguageIdsByTrack, setVisibleLanguageIdsByTrack] = useState<Record<string, string[]>>({});
+  const [correctionDraft, setCorrectionDraft] = useState<Submission | undefined>();
+  const [mediaLibraries, setMediaLibraries] = useState<MediaLibrary[]>(demoCatalog.mediaLibraries);
+  const [mediaMirrors, setMediaMirrors] = useState<MediaMirror[]>(demoCatalog.mediaMirrors);
   const [workflow, setWorkflow] = useState<Workflow>("listen");
   const [route, setRoute] = useState<Route>(() => parseRoute());
   const [currentUser, setCurrentUser] = useState<CurrentUser>({
@@ -109,16 +199,19 @@ export function App() {
         client.listTrackRequests(apiUser),
         canUseCommunity(currentUser.role) ? client.listCommunitySubmissions(apiUser) : Promise.resolve([])
       ]);
-      setCatalog(catalogResponse);
+      const normalizedCatalog = withCatalogDefaults(catalogResponse);
+      setCatalog(normalizedCatalog);
       setOfflinePackages(offlineResponse);
       setSubmissions(submissionResponse);
       setCommunitySubmissions(communitySubmissionResponse);
       setTrackRequests(requestResponse);
       setQueues(queueResponse);
-      setJobs(catalogResponse.videoGenerationJobs);
+      setJobs(normalizedCatalog.videoGenerationJobs);
+      setMediaLibraries(normalizedCatalog.mediaLibraries);
+      setMediaMirrors(normalizedCatalog.mediaMirrors);
       setPlayback((current) => ({
         ...current,
-        trackId: catalogResponse.tracks[0]?.id ?? current.trackId
+        trackId: normalizedCatalog.tracks[0]?.id ?? current.trackId
       }));
       setMessage("Connected to local Dervaish API");
     } catch {
@@ -128,6 +221,8 @@ export function App() {
       setTrackRequests(demoCatalog.trackRequests);
       setQueues([]);
       setJobs(demoCatalog.videoGenerationJobs);
+      setMediaLibraries(demoCatalog.mediaLibraries);
+      setMediaMirrors(demoCatalog.mediaMirrors);
       setMessage("Using seeded demo data because the API is offline");
     }
   }
@@ -149,6 +244,11 @@ export function App() {
   const reciters = track.reciterIds.map((id) => catalog.people.find((person) => person.id === id)).filter((person): person is Person => Boolean(person));
   const writers = track.writerIds.map((id) => catalog.people.find((person) => person.id === id)).filter((person): person is Person => Boolean(person));
   const activeSegment = activeLyricSegment(track.lyricSet, playback.positionMs);
+  const defaultVisibleLanguageIds = track.lyricSet.languages.map((language) => language.id);
+  const visibleLanguageIds = visibleLanguageIdsByTrack[track.id] ?? defaultVisibleLanguageIds;
+  const activeLanguage = track.lyricSet.languages.find((language) => visibleLanguageIds.includes(language.id)) ?? track.lyricSet.languages[0];
+  const audioAsset = track.mediaAssets.find((asset) => asset.kind === "audio" && asset.format === "opus")
+    ?? track.mediaAssets.find((asset) => asset.kind === "audio" && asset.playbackUrl);
   const selectedSubmission = submissions[0];
   const visibleWorkflows: Workflow[] = canSeeAdmin(currentUser.role)
     ? ["listen", "companion", "submit", "community", "admin"]
@@ -160,6 +260,24 @@ export function App() {
     const media = selectedSubmission?.media.find((item) => item.role === "source_video") ?? selectedSubmission?.media.find((item) => item.role === "source_audio");
     return media?.assetId;
   }, [selectedSubmission]);
+
+  useEffect(() => {
+    if (!track) return;
+    if (currentUser.role === "anonymous") {
+      const saved = window.sessionStorage.getItem(`lyric-languages:${track.id}`);
+      if (saved) {
+        try {
+          setVisibleLanguageIdsByTrack((current) => ({ ...current, [track.id]: JSON.parse(saved) as string[] }));
+        } catch {
+          window.sessionStorage.removeItem(`lyric-languages:${track.id}`);
+        }
+      }
+      return;
+    }
+    client.getLyricPreference(apiUser, track.id)
+      .then((preference) => setVisibleLanguageIdsByTrack((current) => ({ ...current, [track.id]: preference.visibleLanguageIds })))
+      .catch(() => setVisibleLanguageIdsByTrack((current) => ({ ...current, [track.id]: defaultVisibleLanguageIds })));
+  }, [track?.id, currentUser.id, currentUser.role]);
 
   function changeRole(role: UserRole) {
     setCurrentUser({
@@ -261,6 +379,36 @@ export function App() {
     setMessage(`${field} marked ${vote}`);
   }
 
+  async function setVisibleLanguages(trackId: string, nextLanguageIds: string[]) {
+    const target = catalog.tracks.find((item) => item.id === trackId);
+    if (!target) return;
+    const allowed = new Set(target.lyricSet.languages.map((language) => language.id));
+    const next = nextLanguageIds.filter((id) => allowed.has(id));
+    if (!next.length) return;
+    setVisibleLanguageIdsByTrack((current) => ({ ...current, [trackId]: next }));
+    if (currentUser.role === "anonymous") {
+      window.sessionStorage.setItem(`lyric-languages:${trackId}`, JSON.stringify(next));
+    } else {
+      await client.saveLyricPreference(apiUser, trackId, next);
+    }
+  }
+
+  async function startCorrection(targetTrack: CatalogSnapshot["tracks"][number]) {
+    if (!canUseCommunity(currentUser.role)) {
+      setMessage("Select a signed-in role before submitting corrections");
+      return;
+    }
+    const created = await client.createCorrectionSubmission(apiUser, targetTrack.id, {
+      submitterId: currentUser.id,
+      correctionFields: ["lyrics", "writer", "reciter", "source", "metadata"]
+    });
+    setCorrectionDraft(created);
+    setSubmissions((current) => [created, ...current]);
+    setWorkflow("submit");
+    navigate("/");
+    setMessage(`Correction draft ready for ${targetTrack.title}`);
+  }
+
   async function removeFromQueue(queueId: string, itemId: string) {
     const updated = await client.removeQueueItem(apiUser, queueId, itemId);
     setQueues((current) => current.map((queue) => (queue.id === updated.id ? updated : queue)));
@@ -269,8 +417,24 @@ export function App() {
   async function createSubmission(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    if (correctionDraft) {
+      const updated = await client.updateSubmission(correctionDraft.id, {
+        title: String(data.get("title") ?? ""),
+        voice: String(data.get("voice") ?? ""),
+        writer: String(data.get("writer") ?? ""),
+        sourceName: String(data.get("sourceName") ?? ""),
+        notes: String(data.get("notes") ?? ""),
+        correctionFields: data.getAll("correctionFields").map(String) as CorrectionField[]
+      });
+      setSubmissions((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setCorrectionDraft(updated);
+      setMessage(`Updated correction draft ${updated.id}`);
+      return;
+    }
     const submission = await client.createSubmission({
       submitterId: currentUser.id,
+      correctionForTrackId: String(data.get("correctionForTrackId") ?? "") || undefined,
+      correctionFields: data.getAll("correctionFields").map(String) as CorrectionField[],
       title: String(data.get("title") ?? ""),
       voice: String(data.get("voice") ?? ""),
       writer: String(data.get("writer") ?? ""),
@@ -278,7 +442,40 @@ export function App() {
       notes: String(data.get("notes") ?? "")
     });
     setSubmissions((current) => [submission, ...current]);
+    if (submission.correctionForTrackId) setCorrectionDraft(undefined);
     setMessage(`Created draft ${submission.id}`);
+    event.currentTarget.reset();
+  }
+
+  async function createMediaLibrary(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const library = await client.createMediaLibrary(apiUser, {
+      title: String(data.get("title") ?? ""),
+      kind: String(data.get("kind") ?? "external") as MediaLibrary["kind"],
+      baseUrl: String(data.get("baseUrl") ?? "") || undefined,
+      isPrimary: data.get("isPrimary") === "on"
+    });
+    setMediaLibraries((current) => [library, ...current]);
+    setCatalog((current) => ({ ...current, mediaLibraries: [library, ...(current.mediaLibraries ?? [])] }));
+    setMessage(`Created media library ${library.title}`);
+    event.currentTarget.reset();
+  }
+
+  async function createMediaMirror(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const mirror = await client.createMediaMirror(apiUser, {
+      libraryId: String(data.get("libraryId") ?? ""),
+      trackId: String(data.get("trackId") ?? ""),
+      kind: String(data.get("kind") ?? "audio") as MediaMirror["kind"],
+      format: String(data.get("format") ?? "") as MediaMirror["format"] || undefined,
+      sourceUrl: String(data.get("sourceUrl") ?? ""),
+      isAvailable: data.get("isAvailable") !== "off"
+    });
+    setMediaMirrors((current) => [mirror, ...current]);
+    setCatalog((current) => ({ ...current, mediaMirrors: [mirror, ...(current.mediaMirrors ?? [])] }));
+    setMessage(`Linked ${mirror.kind} mirror`);
     event.currentTarget.reset();
   }
 
@@ -288,7 +485,8 @@ export function App() {
       originalFilename: "submitted-audio.mp3",
       mimeType: "audio/mpeg",
       sizeBytes: 4_800_000,
-      durationMs: 240_000
+      durationMs: 240_000,
+      sourceUrl: "https://github.com/srmrox/dervaish-media/blob/main/audio/submitted-audio.mp3"
     });
 
     const original = await client.addLyricLanguage(submission.id, {
@@ -346,6 +544,23 @@ export function App() {
     setMessage(`${updated.id} submitted for review`);
   }
 
+  async function addSubmissionLanguage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const submissionId = String(data.get("submissionId") ?? "");
+    const language = await client.addLyricLanguage(submissionId, {
+      code: String(data.get("code") ?? ""),
+      name: String(data.get("name") ?? ""),
+      direction: String(data.get("direction") ?? "ltr") as "ltr" | "rtl",
+      role: String(data.get("role") ?? "translation") as "original" | "translation" | "transliteration",
+      isPublished: false
+    });
+    const refreshed = await client.getSubmission(submissionId);
+    setSubmissions((current) => current.map((item) => (item.id === refreshed.id ? refreshed : item)));
+    setMessage(`Added ${language.name} language metadata`);
+    event.currentTarget.reset();
+  }
+
   async function queueVideoJob(submission: Submission) {
     const assetId = submission.media.find((item) => item.role === "source_video")?.assetId ?? submission.media.find((item) => item.role === "source_audio")?.assetId;
     if (!assetId) {
@@ -385,6 +600,7 @@ export function App() {
           onCreateQueue={createQueue}
           onAddToQueue={addToQueue}
           onToggleTrackUpvote={toggleTrackUpvote}
+          onSubmitCorrection={startCorrection}
         />
       )}
       {workflow === "companion" && (
@@ -397,12 +613,15 @@ export function App() {
           writers={writers}
           activeSegmentId={activeSegment?.id}
           positionMs={playback.positionMs}
+          visibleLanguageIds={visibleLanguageIds}
           onNavigate={navigate}
           onSeek={(positionMs) => setPlayback((current) => ({ ...current, positionMs, isPlaying: true }))}
+          onSetVisibleLanguages={(languageIds) => void setVisibleLanguages(track.id, languageIds)}
+          onSubmitCorrection={() => void startCorrection(track)}
         />
       )}
       {workflow === "submit" && (
-        <SubmitWorkflow submissions={submissions} onCreateSubmission={createSubmission} onSeedSubmission={seedSubmissionDetails} onSubmitDraft={submitDraft} />
+        <SubmitWorkflow submissions={submissions} mediaAssets={catalog.mediaAssets} correctionDraft={correctionDraft} onCreateSubmission={createSubmission} onSeedSubmission={seedSubmissionDetails} onSubmitDraft={submitDraft} onAddLanguage={addSubmissionLanguage} />
       )}
       {workflow === "community" && canUseCommunity(currentUser.role) && (
         <CommunityWorkflow
@@ -416,7 +635,7 @@ export function App() {
         />
       )}
       {workflow === "admin" && canSeeAdmin(currentUser.role) && (
-        <AdminWorkflow submissions={submissions} jobs={jobs} sourceAssetId={selectedSubmissionSourceAsset} onSeedSubmission={seedSubmissionDetails} onQueueVideoJob={queueVideoJob} />
+        <AdminWorkflow submissions={submissions} mediaAssets={catalog.mediaAssets} mediaLibraries={mediaLibraries} mediaMirrors={mediaMirrors} tracks={catalog.tracks} jobs={jobs} sourceAssetId={selectedSubmissionSourceAsset} onSeedSubmission={seedSubmissionDetails} onQueueVideoJob={queueVideoJob} onCreateMediaLibrary={createMediaLibrary} onCreateMediaMirror={createMediaMirror} />
       )}
     </>
   );
@@ -436,6 +655,7 @@ export function App() {
         onShareCollection={shareCollection}
         onAddToQueue={addToQueue}
         onToggleTrackUpvote={toggleTrackUpvote}
+        onSubmitCorrection={startCorrection}
       />
     );
   } else if (route.kind === "person") {
@@ -460,7 +680,7 @@ export function App() {
         <nav className="workflow-nav" aria-label="Primary workflows">
         {visibleWorkflows.map((item) => (
             <button key={item} className={workflow === item && route.kind === "home" ? "active" : ""} onClick={() => selectWorkflow(item)}>
-              {item === "companion" ? "Companion" : item[0].toUpperCase() + item.slice(1)}
+              <ButtonContent icon={workflowIcons[item]}>{item === "companion" ? "Companion" : item[0].toUpperCase() + item.slice(1)}</ButtonContent>
             </button>
           ))}
         </nav>
@@ -490,7 +710,9 @@ export function App() {
         reciters={reciters}
         writers={writers}
         upvoteCount={track.upvoteCount ?? 0}
-        activeText={activeSegment?.textByLanguageId[track.lyricSet.languages[0]?.id] ?? ""}
+        audioUrl={audioAsset?.playbackUrl}
+        activeLanguage={activeLanguage}
+        activeText={activeSegment?.textByLanguageId[activeLanguage?.id] ?? ""}
         onNavigate={navigate}
         onToggle={() => setPlayback((current) => ({ ...current, isPlaying: !current.isPlaying }))}
         onSeek={(positionMs) => setPlayback((current) => ({ ...current, positionMs }))}
@@ -503,16 +725,19 @@ function CreditList({ label, people, onNavigate, maxVisible = 2 }: { label: stri
   const [open, setOpen] = useState(false);
   const visible = people.slice(0, maxVisible);
   const hidden = people.slice(maxVisible);
+  const labelIcon = label === "Writer" ? PenLine : UserRound;
   if (!people.length) return null;
   return (
     <span className="credit-list">
-      <span>{label}</span>
+      <span className="credit-label"><Icon icon={labelIcon} />{label}</span>
       {visible.map((person) => (
         <button key={person.id} className="text-link" onClick={() => onNavigate(`/people/${person.id}`)}>{person.name}</button>
       ))}
       {hidden.length > 0 && (
         <span className="more-menu">
-          <button className="text-link" onClick={() => setOpen((current) => !current)}>+{hidden.length} more</button>
+          <button className="text-link" onClick={() => setOpen((current) => !current)}>
+            <ButtonContent icon={MoreHorizontal}>+{hidden.length} more</ButtonContent>
+          </button>
           {open && (
             <span className="more-popover">
               {people.map((person) => (
@@ -551,8 +776,9 @@ function ListenWorkflow(props: {
   onCreateQueue: (event: FormEvent<HTMLFormElement>) => void;
   onAddToQueue: (queueId: string, trackId: string) => void | Promise<void>;
   onToggleTrackUpvote: (trackId: string) => void | Promise<void>;
+  onSubmitCorrection?: (track: CatalogSnapshot["tracks"][number]) => void | Promise<void>;
 }) {
-  const collection = props.catalog.collections[0];
+  const collection = props.catalog.collections.find((item) => item.trackIds.includes(props.trackId)) ?? props.catalog.collections[0];
   return (
     <section className="listen-view">
       <CollectionRoute
@@ -567,6 +793,7 @@ function ListenWorkflow(props: {
         onShareCollection={props.onShareCollection}
         onAddToQueue={props.onAddToQueue}
         onToggleTrackUpvote={props.onToggleTrackUpvote}
+        onSubmitCorrection={props.onSubmitCorrection}
         offlinePackages={props.offlinePackages}
       />
       <div className="library-grid">
@@ -577,13 +804,26 @@ function ListenWorkflow(props: {
             <option value="private">Private</option>
             <option value="public">Public</option>
           </select>
-          <button type="submit">Create with current track</button>
+          <button type="submit"><ButtonContent icon={Library}>Create with current track</ButtonContent></button>
         </form>
         <form className="form-panel" onSubmit={props.onCreateQueue}>
           <h2>Personal Queue</h2>
           <input name="title" placeholder="Queue title" required />
-          <button type="submit">Create queue</button>
+          <button type="submit"><ButtonContent icon={ListMusic}>Create queue</ButtonContent></button>
         </form>
+        <section className="music-panel">
+          <h2>All tracks</h2>
+          {props.catalog.tracks.map((track) => {
+            const trackCollection = props.catalog.collections.find((item) => item.id === track.collectionId);
+            return (
+              <article key={track.id} className="archive-link">
+                <button className="text-link strong-link" onClick={() => props.onSelectTrack(track.id)}>{track.title}</button>
+                <span>{trackCollection?.title ?? "Uncollected"} · {formatDuration(track.durationMs)}</span>
+                <TrackCredits catalog={props.catalog} track={track} onNavigate={props.onNavigate} />
+              </article>
+            );
+          })}
+        </section>
       </div>
     </section>
   );
@@ -601,6 +841,7 @@ function CollectionRoute({
   onShareCollection,
   onAddToQueue,
   onToggleTrackUpvote,
+  onSubmitCorrection,
   offlinePackages
 }: {
   collection: Collection;
@@ -614,24 +855,55 @@ function CollectionRoute({
   onShareCollection: (collection: Collection) => void | Promise<void>;
   onAddToQueue: (queueId: string, trackId: string) => void | Promise<void>;
   onToggleTrackUpvote: (trackId: string) => void | Promise<void>;
+  onSubmitCorrection?: (track: CatalogSnapshot["tracks"][number]) => void | Promise<void>;
   offlinePackages?: OfflinePackage[];
 }) {
+  const [videoMode, setVideoMode] = useState<"thumbnail" | "theater">("thumbnail");
+  const videoRef = useRef<HTMLVideoElement>(null);
   const tracks = catalog.tracks.filter((track) => collection.trackIds.includes(track.id));
   const canEdit = collection.ownerUserId === currentUser.id;
+  const activeTrack = tracks.find((track) => track.id === trackId) ?? tracks[0];
+  const playableVideo = activeTrack
+    ? catalog.videos.find((video) => video.archiveRecordIds.some((archiveId) => activeTrack.archiveRecordIds.includes(archiveId)) && video.mediaAssets.some((asset) => asset.kind === "video" && asset.playbackUrl))
+    : undefined;
+  const playableVideoAsset = playableVideo?.mediaAssets.find((asset) => asset.kind === "video" && asset.playbackUrl && ["mp4", "webm"].includes(asset.format))
+    ?? playableVideo?.mediaAssets.find((asset) => asset.kind === "video" && asset.playbackUrl);
+  const activeMirrors = (catalog.mediaMirrors ?? []).filter((mirror) => mirror.trackId === trackId && mirror.isAvailable);
   return (
     <section className="listen-view">
+      {videoMode === "theater" && playableVideoAsset?.playbackUrl && (
+        <section className="video-theater">
+          <video ref={videoRef} controls src={playableVideoAsset.playbackUrl} />
+          <div>
+            <strong>{playableVideo?.title}</strong>
+            <span>{playableVideoAsset.urlSource ?? "external"} video</span>
+            <button className="secondary compact-button" onClick={() => setVideoMode("thumbnail")}><ButtonContent icon={X}>Close theater</ButtonContent></button>
+            <button className="secondary compact-button" onClick={() => void videoRef.current?.requestFullscreen()}><ButtonContent icon={Maximize2}>Fullscreen</ButtonContent></button>
+          </div>
+        </section>
+      )}
       <div className="collection-header">
-        <img src={collection.artworkUrl} alt={collection.title} />
+        {playableVideoAsset?.playbackUrl ? (
+          <div className="thumbnail-video">
+            <video ref={videoMode === "thumbnail" ? videoRef : undefined} controls src={playableVideoAsset.playbackUrl} />
+            <button className="secondary compact-button" onClick={() => setVideoMode("theater")}><ButtonContent icon={RectangleHorizontal}>Theater view</ButtonContent></button>
+            <button className="secondary compact-button" onClick={() => void videoRef.current?.requestFullscreen()}><ButtonContent icon={Maximize2}>Fullscreen</ButtonContent></button>
+          </div>
+        ) : (
+          <img src={collection.artworkUrl} alt={collection.title} />
+        )}
         <div>
           <span className="overline">{labelForCollection(collection)}</span>
           <h1>{collection.title}</h1>
           <p>{collection.visibility} · {collection.year ?? "undated"} · {tracks.length} track</p>
           <div className="action-row">
-            <button onClick={() => onSelectTrack(tracks[0]?.id ?? trackId)}>Play</button>
-            <button className="secondary" onClick={() => void onShareCollection(collection)}>Share</button>
-            {canEdit && <button className="secondary" onClick={() => void onToggleCollectionVisibility(collection)}>{collection.visibility === "public" ? "Make private" : "Make public"}</button>}
+            <button onClick={() => onSelectTrack(tracks[0]?.id ?? trackId)}><ButtonContent icon={Play}>Play</ButtonContent></button>
+            <button className="secondary" onClick={() => void onShareCollection(collection)}><ButtonContent icon={Share2}>Share</ButtonContent></button>
+            {canEdit && <button className="secondary" onClick={() => void onToggleCollectionVisibility(collection)}><ButtonContent icon={collection.visibility === "public" ? EyeOff : Eye}>{collection.visibility === "public" ? "Make private" : "Make public"}</ButtonContent></button>}
+            {onSubmitCorrection && <button className="secondary" onClick={() => void onSubmitCorrection(tracks[0] ?? catalog.tracks[0])}><ButtonContent icon={MessageSquarePlus}>Submit correction</ButtonContent></button>}
             {offlinePackages && <span>{Math.round((offlinePackages[0]?.totalSizeBytes ?? 0) / 1_000_000)} MB package</span>}
           </div>
+          {activeMirrors.length > 0 && <p>{activeMirrors.length} media mirror{activeMirrors.length === 1 ? "" : "s"} available · {activeMirrors.map((mirror) => mirror.urlSource ?? "external").join(", ")}</p>}
         </div>
       </div>
 
@@ -652,7 +924,7 @@ function CollectionRoute({
               <span>{formatDuration(track.durationMs)}</span>
               <span className="track-actions">
                 <button className="secondary compact-button" onClick={() => void onToggleTrackUpvote(track.id)}>
-                  {track.upvotedByCurrentUser ? "Upvoted" : "Upvote"} · {track.upvoteCount ?? 0}
+                  <ButtonContent icon={ThumbsUp}>{track.upvotedByCurrentUser ? "Upvoted" : "Upvote"} · {track.upvoteCount ?? 0}</ButtonContent>
                 </button>
                 <select aria-label={`Add ${track.title} to queue`} defaultValue="" onChange={(event) => event.target.value && void onAddToQueue(event.target.value, track.id)}>
                   <option value="">Queue</option>
@@ -671,6 +943,13 @@ function CollectionRoute({
               <span>{labelForCollection(item)} · {item.visibility}</span>
             </article>
           ))}
+          {playableVideo && playableVideoAsset?.playbackUrl && (
+            <article className="archive-link">
+              <strong>{playableVideo.title}</strong>
+              <video className="inline-video" controls src={playableVideoAsset.playbackUrl} />
+              <span>{playableVideoAsset.urlSource ?? "external"} media URL</span>
+            </article>
+          )}
         </section>
       </div>
     </section>
@@ -686,22 +965,16 @@ function CompanionWorkflow(props: {
   writers: Person[];
   activeSegmentId?: string;
   positionMs: number;
+  visibleLanguageIds: string[];
   onNavigate: (path: string) => void;
   onSeek: (positionMs: number) => void;
+  onSetVisibleLanguages: (languageIds: string[]) => void;
+  onSubmitCorrection: () => void;
 }) {
-  const originalLanguage = props.track.lyricSet.languages[0];
-  const secondaryLanguages = props.track.lyricSet.languages.slice(1);
+  const visibleLanguages = props.track.lyricSet.languages.filter((language) => props.visibleLanguageIds.includes(language.id));
   return (
     <section className="companion-view">
-      <aside className="toc-panel">
-        <span className="overline">Companion</span>
-        <h2>{props.track.title}</h2>
-        <a href="#text">Text and translation</a>
-        <a href="#explanations">Explanations</a>
-        <a href="#sources">Sources</a>
-      </aside>
-
-      <article className="wiki-article">
+      <article className="wiki-article lyrics-column">
         <header>
           <span className="overline">{props.artistName} · {props.collectionTitle}</span>
           <h1>{props.track.title}</h1>
@@ -711,26 +984,46 @@ function CompanionWorkflow(props: {
           </div>
           <p>{props.archiveTitle}</p>
           <div className="mini-player">
-            <button onClick={() => props.onSeek(Math.max(props.positionMs - 8000, 0))}>Back</button>
+            <button onClick={() => props.onSeek(Math.max(props.positionMs - 8000, 0))}><ButtonContent icon={SkipBack}>Back</ButtonContent></button>
             <div>
               <strong>{formatDuration(props.positionMs)}</strong>
               <span>Current lyric sync position</span>
             </div>
-            <button onClick={() => props.onSeek(Math.min(props.positionMs + 8000, props.track.durationMs))}>Forward</button>
+            <button onClick={() => props.onSeek(Math.min(props.positionMs + 8000, props.track.durationMs))}><ButtonContent icon={SkipForward}>Forward</ButtonContent></button>
           </div>
         </header>
+        <div className="language-picker">
+          {props.track.lyricSet.languages.map((language) => (
+            <label key={language.id}>
+              <input
+                type="checkbox"
+                checked={props.visibleLanguageIds.includes(language.id)}
+                onChange={(event) => {
+                  const next = event.target.checked
+                    ? [...props.visibleLanguageIds, language.id]
+                    : props.visibleLanguageIds.filter((id) => id !== language.id);
+                  props.onSetVisibleLanguages(next);
+                }}
+              />
+              <span>{language.name}</span>
+            </label>
+          ))}
+        </div>
         <section id="text" className="lyric-article">
           {props.track.lyricSet.segments.map((segment, index) => (
             <button key={segment.id} className={segment.id === props.activeSegmentId ? "lyric-block active" : "lyric-block"} onClick={() => props.onSeek(segment.startMs)}>
               <span>{index + 1}</span>
               <div>
-                <strong dir={originalLanguage?.direction}>{segment.textByLanguageId[originalLanguage?.id] ?? ""}</strong>
-                {secondaryLanguages.map((language) => <p key={language.id} dir={language.direction}>{segment.textByLanguageId[language.id]}</p>)}
+                {visibleLanguages.map((language, languageIndex) => languageIndex === 0
+                  ? <strong key={language.id} {...languageTextProps(language)}>{segment.textByLanguageId[language.id] ?? ""}</strong>
+                  : <p key={language.id} {...languageTextProps(language)}>{segment.textByLanguageId[language.id]}</p>)}
               </div>
               <small>{formatDuration(segment.startMs)}-{formatDuration(segment.endMs)}</small>
             </button>
           ))}
         </section>
+      </article>
+      <aside className="wiki-article context-column">
         <section id="explanations" className="wiki-section">
           <h2>Explanations</h2>
           <p>Each timed line can carry translation notes, oral-history commentary, alternate variants, and editorial interpretation.</p>
@@ -738,8 +1031,9 @@ function CompanionWorkflow(props: {
         <section id="sources" className="wiki-section">
           <h2>Sources</h2>
           <p>Source notes, citations, trust ratings, and revision history attach here so the listening experience remains connected to archival evidence.</p>
+          <button onClick={props.onSubmitCorrection}><ButtonContent icon={MessageSquarePlus}>Submit correction</ButtonContent></button>
         </section>
-      </article>
+      </aside>
     </section>
   );
 }
@@ -784,7 +1078,7 @@ function QueueRoute({ queue, catalog, onSelectTrack, onRemoveItem }: { queue: Us
               <span>{index + 1}</span>
               <button className="text-link strong-link" onClick={() => onSelectTrack(track.id)}>{track.title}</button>
               <span>{formatDuration(track.durationMs)}</span>
-              <button className="secondary" onClick={() => void onRemoveItem(queue.id, item.id)}>Remove</button>
+              <button className="secondary" onClick={() => void onRemoveItem(queue.id, item.id)}><ButtonContent icon={Trash2}>Remove</ButtonContent></button>
             </div>
           );
         })}
@@ -824,9 +1118,9 @@ function CommunityWorkflow({ catalog, trackRequests, submissions, onCreateTrackR
       </div>
 
       <div className="tab-row">
-        <button className={tab === "requests" ? "active" : ""} onClick={() => setTab("requests")}>Requests</button>
-        <button className={tab === "tracks" ? "active" : ""} onClick={() => setTab("tracks")}>Track votes</button>
-        <button className={tab === "verify" ? "active" : ""} onClick={() => setTab("verify")}>Verify submissions</button>
+        <button className={tab === "requests" ? "active" : ""} onClick={() => setTab("requests")}><ButtonContent icon={MessageSquarePlus}>Requests</ButtonContent></button>
+        <button className={tab === "tracks" ? "active" : ""} onClick={() => setTab("tracks")}><ButtonContent icon={ThumbsUp}>Track votes</ButtonContent></button>
+        <button className={tab === "verify" ? "active" : ""} onClick={() => setTab("verify")}><ButtonContent icon={CheckCircle2}>Verify submissions</ButtonContent></button>
       </div>
 
       {tab === "requests" && (
@@ -841,7 +1135,7 @@ function CommunityWorkflow({ catalog, trackRequests, submissions, onCreateTrackR
             <input name="reciterName" placeholder="Reciter" />
             <input name="writerName" placeholder="Writer" />
             <textarea name="notes" placeholder="Notes" rows={4} />
-            <button type="submit">Post request</button>
+            <button type="submit"><ButtonContent icon={Send}>Post request</ButtonContent></button>
           </form>
           <section className="queue-panel">
             <h2>Request queue</h2>
@@ -854,7 +1148,7 @@ function CommunityWorkflow({ catalog, trackRequests, submissions, onCreateTrackR
                   {request.notes && <p>{request.notes}</p>}
                 </div>
                 <button className="secondary" onClick={() => void onToggleTrackRequestUpvote(request.id)}>
-                  {request.upvotedByCurrentUser ? "Upvoted" : "Upvote"}
+                  <ButtonContent icon={ThumbsUp}>{request.upvotedByCurrentUser ? "Upvoted" : "Upvote"}</ButtonContent>
                 </button>
               </article>
             ))}
@@ -872,7 +1166,7 @@ function CommunityWorkflow({ catalog, trackRequests, submissions, onCreateTrackR
               <TrackCredits catalog={catalog} track={track} onNavigate={() => undefined} />
               <span>{track.upvoteCount ?? 0} upvotes</span>
               <button className="secondary compact-button" onClick={() => void onToggleTrackUpvote(track.id)}>
-                {track.upvotedByCurrentUser ? "Upvoted" : "Upvote"}
+                <ButtonContent icon={ThumbsUp}>{track.upvotedByCurrentUser ? "Upvoted" : "Upvote"}</ButtonContent>
               </button>
             </div>
           ))}
@@ -894,8 +1188,8 @@ function CommunityWorkflow({ catalog, trackRequests, submissions, onCreateTrackR
                 {verificationFields.map((field) => (
                   <span key={field}>
                     <strong>{field}</strong>
-                    <button className="secondary compact-button" onClick={() => void onVerifySubmission(submission.id, field, "verify")}>Verify</button>
-                    <button className="secondary compact-button" onClick={() => void onVerifySubmission(submission.id, field, "dispute")}>Dispute</button>
+                    <IconButton className="secondary compact-button" icon={CheckCircle2} label={`Verify ${field}`} onClick={() => void onVerifySubmission(submission.id, field, "verify")} />
+                    <IconButton className="secondary compact-button" icon={AlertTriangle} label={`Dispute ${field}`} onClick={() => void onVerifySubmission(submission.id, field, "dispute")} />
                   </span>
                 ))}
               </div>
@@ -907,11 +1201,21 @@ function CommunityWorkflow({ catalog, trackRequests, submissions, onCreateTrackR
   );
 }
 
-function SubmitWorkflow({ submissions, onCreateSubmission, onSeedSubmission, onSubmitDraft }: {
+function mediaSourceSummary(submission: Submission, mediaAssets: CatalogSnapshot["mediaAssets"]) {
+  const sources = submission.media
+    .map((item) => mediaAssets.find((asset) => asset.id === item.assetId)?.urlSource ?? "storage")
+    .filter(Boolean);
+  return sources.length ? [...new Set(sources)].join(", ") : "no media source";
+}
+
+function SubmitWorkflow({ submissions, mediaAssets, correctionDraft, onCreateSubmission, onSeedSubmission, onSubmitDraft, onAddLanguage }: {
   submissions: Submission[];
+  mediaAssets: CatalogSnapshot["mediaAssets"];
+  correctionDraft?: Submission;
   onCreateSubmission: (event: FormEvent<HTMLFormElement>) => void;
   onSeedSubmission: (submission: Submission) => void | Promise<void>;
   onSubmitDraft: (submission: Submission) => void | Promise<void>;
+  onAddLanguage: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
 }) {
   return (
     <section className="submit-view">
@@ -921,14 +1225,43 @@ function SubmitWorkflow({ submissions, onCreateSubmission, onSeedSubmission, onS
         <p>Add metadata, media, multilingual lyric timing, citations, and review notes before sending a submission to editors.</p>
       </div>
       <div className="submit-grid">
-        <form className="form-panel" onSubmit={onCreateSubmission}>
-          <h2>Draft metadata</h2>
-          <input name="title" placeholder="Title" required minLength={3} />
-          <input name="voice" placeholder="Reciter" />
-          <input name="writer" placeholder="Writer" />
-          <input name="sourceName" placeholder="Source / provenance" />
-          <textarea name="notes" placeholder="Notes" rows={5} />
-          <button type="submit">Create draft</button>
+        <form className="form-panel" onSubmit={onCreateSubmission} key={correctionDraft?.id ?? "new-submission"}>
+          <h2>{correctionDraft ? "Correction draft" : "Draft metadata"}</h2>
+          {correctionDraft?.correctionForTrackId && <input type="hidden" name="correctionForTrackId" value={correctionDraft.correctionForTrackId} />}
+          <input name="title" placeholder="Title" required minLength={3} defaultValue={correctionDraft?.title} />
+          <input name="voice" placeholder="Reciter" defaultValue={correctionDraft?.voice} />
+          <input name="writer" placeholder="Writer" defaultValue={correctionDraft?.writer} />
+          <input name="sourceName" placeholder="Source / provenance" defaultValue={correctionDraft?.sourceName} />
+          {correctionDraft && (
+            <div className="checkbox-grid">
+              {correctionFields.map((field) => (
+                <label key={field}>
+                  <input type="checkbox" name="correctionFields" value={field} defaultChecked={correctionDraft.correctionFields.includes(field)} />
+                  <span>{field}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <textarea name="notes" placeholder="Notes" rows={5} defaultValue={correctionDraft?.notes} />
+          <button type="submit"><ButtonContent icon={correctionDraft ? Save : Plus}>{correctionDraft ? "Create correction draft" : "Create draft"}</ButtonContent></button>
+        </form>
+        <form className="form-panel" onSubmit={onAddLanguage}>
+          <h2>Lyric language</h2>
+          <select name="submissionId" required>
+            {submissions.map((submission) => <option key={submission.id} value={submission.id}>{submission.title}</option>)}
+          </select>
+          <input name="code" placeholder="Language code, e.g. ur" required minLength={2} />
+          <input name="name" placeholder="Language name" required minLength={2} />
+          <select name="direction" defaultValue="ltr">
+            <option value="ltr">Left-to-right</option>
+            <option value="rtl">Right-to-left</option>
+          </select>
+          <select name="role" defaultValue="translation">
+            <option value="original">Original</option>
+            <option value="translation">Translation</option>
+            <option value="transliteration">Transliteration</option>
+          </select>
+          <button type="submit"><ButtonContent icon={Languages}>Add language</ButtonContent></button>
         </form>
         <section className="queue-panel">
           <h2>Submission queue</h2>
@@ -936,14 +1269,14 @@ function SubmitWorkflow({ submissions, onCreateSubmission, onSeedSubmission, onS
             <article key={submission.id} className="submission-card">
               <div>
                 <strong>{submission.title}</strong>
-                <span>{submission.moderationStatus.replace("_", " ")}</span>
+                <span>{submission.correctionForTrackId ? `correction for ${submission.correctionForTrackId}` : submission.moderationStatus.replace("_", " ")}</span>
                 <p>Reciter: {submission.voice || "not set"} · Writer: {submission.writer || "not set"}</p>
                 <VerificationSummary submission={submission} />
-                <p>{submission.lyricSet.languages.length} languages · {submission.media.length} media assets</p>
+                <p>{submission.lyricSet.languages.length} languages · {submission.media.length} media assets · {mediaSourceSummary(submission, mediaAssets)}</p>
               </div>
               <div className="button-stack">
-                <button className="secondary" onClick={() => void onSeedSubmission(submission)}>Add sample media + lyrics</button>
-                <button onClick={() => void onSubmitDraft(submission)}>Submit for review</button>
+                <button className="secondary" onClick={() => void onSeedSubmission(submission)}><ButtonContent icon={WandSparkles}>Add sample media + lyrics</ButtonContent></button>
+                <button onClick={() => void onSubmitDraft(submission)}><ButtonContent icon={Send}>Submit for review</ButtonContent></button>
               </div>
             </article>
           ))}
@@ -953,12 +1286,18 @@ function SubmitWorkflow({ submissions, onCreateSubmission, onSeedSubmission, onS
   );
 }
 
-function AdminWorkflow({ submissions, jobs, sourceAssetId, onSeedSubmission, onQueueVideoJob }: {
+function AdminWorkflow({ submissions, mediaAssets, mediaLibraries, mediaMirrors, tracks, jobs, sourceAssetId, onSeedSubmission, onQueueVideoJob, onCreateMediaLibrary, onCreateMediaMirror }: {
   submissions: Submission[];
+  mediaAssets: CatalogSnapshot["mediaAssets"];
+  mediaLibraries: MediaLibrary[];
+  mediaMirrors: MediaMirror[];
+  tracks: CatalogSnapshot["tracks"];
   jobs: VideoGenerationJob[];
   sourceAssetId?: string;
   onSeedSubmission: (submission: Submission) => void | Promise<void>;
   onQueueVideoJob: (submission: Submission) => void | Promise<void>;
+  onCreateMediaLibrary: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
+  onCreateMediaMirror: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
 }) {
   return (
     <section className="admin-view">
@@ -977,12 +1316,48 @@ function AdminWorkflow({ submissions, jobs, sourceAssetId, onSeedSubmission, onQ
                 <span>{submission.moderationStatus.replace("_", " ")}</span>
                 <p>Reciter: {submission.voice || "not set"} · Writer: {submission.writer || "not set"}</p>
                 <VerificationSummary submission={submission} />
-                <p>{submission.media.length ? "Source asset available" : "No source media yet"} · {submission.lyricSet.languages.length} lyric languages</p>
+                <p>{submission.media.length ? "Source asset available" : "No source media yet"} · {mediaSourceSummary(submission, mediaAssets)} · {submission.lyricSet.languages.length} lyric languages</p>
               </div>
               <div className="button-stack">
-                <button className="secondary" onClick={() => void onSeedSubmission(submission)}>Prepare sample assets</button>
-                <button onClick={() => void onQueueVideoJob(submission)}>Queue lyric video</button>
+                <button className="secondary" onClick={() => void onSeedSubmission(submission)}><ButtonContent icon={WandSparkles}>Prepare sample assets</ButtonContent></button>
+                <button onClick={() => void onQueueVideoJob(submission)}><ButtonContent icon={Video}>Queue lyric video</ButtonContent></button>
               </div>
+            </article>
+          ))}
+        </section>
+        <section className="queue-panel">
+          <h2>Media libraries</h2>
+          <form className="inline-form" onSubmit={onCreateMediaLibrary}>
+            <input name="title" placeholder="Library title" required minLength={3} />
+            <select name="kind" defaultValue="github">
+              <option value="github">GitHub</option>
+              <option value="external">External</option>
+              <option value="storage">Storage</option>
+            </select>
+            <input name="baseUrl" placeholder="Base URL" />
+            <label className="inline-check"><input type="checkbox" name="isPrimary" /> Primary</label>
+            <button type="submit"><ButtonContent icon={Library}>Add library</ButtonContent></button>
+          </form>
+          <form className="inline-form" onSubmit={onCreateMediaMirror}>
+            <select name="libraryId" required>
+              {mediaLibraries.map((library) => <option key={library.id} value={library.id}>{library.title}</option>)}
+            </select>
+            <select name="trackId" required>
+              {tracks.map((track) => <option key={track.id} value={track.id}>{track.title}</option>)}
+            </select>
+            <select name="kind" defaultValue="audio">
+              <option value="audio">Audio</option>
+              <option value="video">Video</option>
+              <option value="image">Image</option>
+            </select>
+            <input name="format" placeholder="Format, e.g. opus/mp4" />
+            <input name="sourceUrl" placeholder="Mirror media URL" required />
+            <button type="submit"><ButtonContent icon={Link2}>Attach mirror</ButtonContent></button>
+          </form>
+          {mediaLibraries.map((library) => (
+            <article key={library.id} className="job-card">
+              <strong>{library.title}</strong>
+              <span>{library.kind} · {library.isPrimary ? "primary" : "mirror"} · {mediaMirrors.filter((mirror) => mirror.libraryId === library.id).length} URLs</span>
             </article>
           ))}
         </section>
@@ -1002,7 +1377,7 @@ function AdminWorkflow({ submissions, jobs, sourceAssetId, onSeedSubmission, onQ
   );
 }
 
-function PlaybackBar({ trackTitle, artworkUrl, positionMs, durationMs, isPlaying, reciters, writers, upvoteCount, activeText, onNavigate, onToggle, onSeek }: {
+function PlaybackBar({ trackTitle, artworkUrl, positionMs, durationMs, isPlaying, reciters, writers, upvoteCount, audioUrl, activeLanguage, activeText, onNavigate, onToggle, onSeek }: {
   trackTitle: string;
   artworkUrl: string;
   positionMs: number;
@@ -1011,11 +1386,31 @@ function PlaybackBar({ trackTitle, artworkUrl, positionMs, durationMs, isPlaying
   reciters: Person[];
   writers: Person[];
   upvoteCount: number;
+  audioUrl?: string;
+  activeLanguage?: { code: string; direction: "ltr" | "rtl" };
   activeText: string;
   onNavigate: (path: string) => void;
   onToggle: () => void;
   onSeek: (positionMs: number) => void;
 }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (!audioRef.current || !audioUrl) return;
+    if (isPlaying) {
+      void audioRef.current.play().catch(() => undefined);
+    } else {
+      audioRef.current.pause();
+    }
+  }, [audioUrl, isPlaying]);
+
+  function seek(position: number) {
+    if (audioRef.current) {
+      audioRef.current.currentTime = position / 1000;
+    }
+    onSeek(position);
+  }
+
   return (
     <footer className="playback-bar">
       <div className="now-playing">
@@ -1028,11 +1423,20 @@ function PlaybackBar({ trackTitle, artworkUrl, positionMs, durationMs, isPlaying
         </div>
       </div>
       <div className="transport">
-        <button onClick={onToggle}>{isPlaying ? "Pause" : "Play"}</button>
-        <input aria-label="Playback position" type="range" min={0} max={durationMs} value={positionMs} onChange={(event) => onSeek(Number(event.target.value))} />
+        <IconButton icon={isPlaying ? Pause : Play} label={isPlaying ? "Pause" : "Play"} onClick={onToggle} />
+        <input aria-label="Playback position" type="range" min={0} max={durationMs} value={positionMs} onChange={(event) => seek(Number(event.target.value))} />
         <span>{formatDuration(positionMs)} / {formatDuration(durationMs)}</span>
+        {audioUrl && (
+          <audio
+            ref={audioRef}
+            controls
+            src={audioUrl}
+            onTimeUpdate={(event) => onSeek(Math.floor(event.currentTarget.currentTime * 1000))}
+            onSeeked={(event) => onSeek(Math.floor(event.currentTarget.currentTime * 1000))}
+          />
+        )}
       </div>
-      <p className="active-caption">{activeText}</p>
+      <p className="active-caption" {...languageTextProps(activeLanguage)}>{activeText}</p>
     </footer>
   );
 }

@@ -9,6 +9,8 @@ Dervaish is a preservation-oriented media and archive platform with:
 - personal listening queues
 - community track requests, track upvotes, and submission verification
 - synced lyrics and embedded metadata support
+- direction-aware LTR/RTL lyric rendering
+- URL-backed audio and video playback, including public GitHub media links
 - a source-referenced archive with editorial and community trust signals
 - contributor submissions with multilingual timed lyrics
 - Python/MoviePy lyric-video generation for submitted audio and video sources
@@ -51,7 +53,7 @@ Run the API smoke tests with:
 npm run smoke -w @dervaish/api
 ```
 
-The smoke tests cover the hard Collection rename, curated Collection labeling, Reciter/Writer track credits, Collection sharing, private ownership checks, personal queue item lifecycle, track requests, track upvotes, and community submission verification.
+The smoke tests cover the hard Collection rename, curated Collection labeling, Reciter/Writer track credits, Collection sharing, private ownership checks, personal queue item lifecycle, track requests, track upvotes, community submission verification, GitHub URL normalization, playback URLs, and language direction metadata.
 
 ## Collections and queues
 
@@ -69,6 +71,16 @@ Signed-in demo roles (`listener`, `contributor`, `editor`, and `admin`) can:
 - verify or dispute submission fields (`writer`, `reciter`, `lyrics`, `source`, and `overall`)
 
 Anonymous users can view public request and track counts, but cannot create requests, vote, or verify submissions.
+
+## Playback URLs and Language Direction
+
+Media assets can carry a `sourceUrl` in addition to `storageKey`. Public GitHub `blob` URLs are normalized to `raw.githubusercontent.com` playback URLs by the API, and ordinary HTTP(S) media URLs pass through directly. Non-HTTP(S) submission media URLs are rejected.
+
+Lyric languages use their `direction` field as the display source of truth. Web and mobile clients apply LTR/RTL direction and text alignment per language so mixed-language lyric blocks keep controls stable while lyric text follows the correct script direction.
+
+## UI design system
+
+Web UI elements, icon usage, interaction rules, and workflow patterns are documented in [`docs/design-system.md`](docs/design-system.md). Use that guide when adding or changing controls so icon-only actions stay accessible and dense archive workflows remain consistent.
 
 ## Video generation worker
 

@@ -4,6 +4,8 @@ import type {
   Collection,
   LyricLanguage,
   LyricSegment,
+  MediaLibrary,
+  MediaMirror,
   MediaAsset,
   OfflinePackage,
   Person,
@@ -21,6 +23,17 @@ import type {
   Video,
   VideoGenerationJob
 } from "@dervaish/domain";
+
+export interface TrackPlaybackResponse {
+  trackId: string;
+  preferredAssetId?: string;
+  asset?: MediaAsset;
+  audioUrl?: string;
+  mirrors: MediaMirror[];
+  lyricSet: Track["lyricSet"];
+  lyrics: Track["lyrics"];
+  resumePositionMs: number;
+}
 
 export interface DervaishClientUser {
   id: string;
@@ -68,8 +81,42 @@ export class DervaishApiClient {
     return request<Track & { reciters?: Person[]; writers?: Person[] }>(this.baseUrl, `/catalog/tracks/${id}`, user);
   }
 
+  getTrackPlayback(id: string) {
+    return request<TrackPlaybackResponse>(this.baseUrl, `/playback/tracks/${id}`);
+  }
+
+  getLyricPreference(user: DervaishClientUser, trackId: string) {
+    return request<{ userId: string; trackId: string; visibleLanguageIds: string[]; updatedAt: string }>(this.baseUrl, `/me/lyric-preferences/${trackId}`, user);
+  }
+
+  saveLyricPreference(user: DervaishClientUser, trackId: string, visibleLanguageIds: string[]) {
+    return request<{ userId: string; trackId: string; visibleLanguageIds: string[]; updatedAt: string }>(this.baseUrl, `/me/lyric-preferences/${trackId}`, user, {
+      method: "PUT",
+      body: JSON.stringify({ visibleLanguageIds })
+    });
+  }
+
   toggleTrackUpvote(user: DervaishClientUser, id: string) {
     return request<Track>(this.baseUrl, `/catalog/tracks/${id}/upvote`, user, { method: "POST" });
+  }
+
+  listTrackMirrors(id: string) {
+    return request<MediaMirror[]>(this.baseUrl, `/catalog/tracks/${id}/mirrors`);
+  }
+
+  createCorrectionSubmission(user: DervaishClientUser, trackId: string, input: {
+    submitterId: string;
+    title?: string;
+    voice?: string;
+    writer?: string;
+    sourceName?: string;
+    notes?: string;
+    correctionFields?: Submission["correctionFields"];
+  }) {
+    return request<Submission>(this.baseUrl, `/catalog/tracks/${trackId}/corrections`, user, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
   }
 
   getPerson(id: string, user?: DervaishClientUser) {
@@ -213,6 +260,8 @@ export class DervaishApiClient {
 
   createSubmission(input: {
     submitterId: string;
+    correctionForTrackId?: string;
+    correctionFields?: Submission["correctionFields"];
     title: string;
     voice?: string;
     writer?: string;
@@ -225,7 +274,52 @@ export class DervaishApiClient {
     });
   }
 
-  updateSubmission(id: string, input: Partial<Pick<Submission, "title" | "voice" | "writer" | "notes" | "sourceName" | "moderationStatus">>) {
+  listMediaLibraries(user: DervaishClientUser) {
+    return request<MediaLibrary[]>(this.baseUrl, "/admin/media-libraries", user);
+  }
+
+  createMediaLibrary(user: DervaishClientUser, input: {
+    title: string;
+    kind: MediaLibrary["kind"];
+    baseUrl?: string;
+    isPrimary?: boolean;
+  }) {
+    return request<MediaLibrary>(this.baseUrl, "/admin/media-libraries", user, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+
+  updateMediaLibrary(user: DervaishClientUser, id: string, input: Partial<Pick<MediaLibrary, "title" | "kind" | "baseUrl" | "isPrimary">>) {
+    return request<MediaLibrary>(this.baseUrl, `/admin/media-libraries/${id}`, user, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    });
+  }
+
+  createMediaMirror(user: DervaishClientUser, input: {
+    libraryId: string;
+    trackId: string;
+    kind: MediaMirror["kind"];
+    format?: MediaMirror["format"];
+    sourceUrl: string;
+    checksumSha256?: string;
+    isAvailable?: boolean;
+  }) {
+    return request<MediaMirror>(this.baseUrl, "/admin/media-mirrors", user, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+
+  updateMediaMirror(user: DervaishClientUser, id: string, input: Partial<Pick<MediaMirror, "kind" | "format" | "sourceUrl" | "checksumSha256" | "isAvailable">>) {
+    return request<MediaMirror>(this.baseUrl, `/admin/media-mirrors/${id}`, user, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    });
+  }
+
+  updateSubmission(id: string, input: Partial<Pick<Submission, "title" | "voice" | "writer" | "notes" | "sourceName" | "moderationStatus" | "correctionFields">>) {
     return request<Submission>(this.baseUrl, `/submissions/${id}`, undefined, {
       method: "PATCH",
       body: JSON.stringify(input)
@@ -240,6 +334,7 @@ export class DervaishApiClient {
     durationMs?: number;
     checksumSha256?: string;
     storageKey?: string;
+    sourceUrl?: string;
     width?: number;
     height?: number;
   }) {

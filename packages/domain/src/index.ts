@@ -1,6 +1,7 @@
 export type Visibility = "public" | "private" | "pending-review";
 export type MediaKind = "audio" | "video" | "image";
 export type AssetFormat = "flac" | "opus" | "aac" | "webm" | "mp4" | "mkv" | "mp3" | "wav" | "jpg" | "png";
+export type MediaUrlSource = "storage" | "external" | "github";
 export type SourceRatingKind = "editorial" | "community";
 export type UserRole = "anonymous" | "listener" | "contributor" | "editor" | "admin";
 export type SubmissionStatus = "draft" | "submitted" | "under_review" | "changes_requested" | "approved" | "rejected" | "published";
@@ -13,6 +14,8 @@ export type PersonRole = "reciter" | "writer" | "both";
 export type TrackRequestStatus = "open" | "planned" | "fulfilled" | "rejected";
 export type SubmissionVerificationField = "writer" | "reciter" | "lyrics" | "source" | "overall";
 export type SubmissionVerificationVote = "verify" | "dispute";
+export type CorrectionField = "lyrics" | "writer" | "reciter" | "source" | "metadata" | "media";
+export type MediaLibraryKind = "github" | "external" | "storage";
 
 export interface Provenance {
   sourceName: string;
@@ -30,6 +33,9 @@ export interface MediaAsset {
   durationMs: number;
   sizeBytes: number;
   storageKey: string;
+  sourceUrl?: string;
+  playbackUrl?: string;
+  urlSource?: MediaUrlSource;
   isMaster: boolean;
   originalFilename?: string;
   mimeType?: string;
@@ -187,6 +193,8 @@ export interface SubmissionMedia {
 export interface Submission {
   id: string;
   submitterId: string;
+  correctionForTrackId?: string;
+  correctionFields: CorrectionField[];
   title: string;
   voice?: string;
   writer?: string;
@@ -204,6 +212,39 @@ export interface Submission {
   generatedVideoJobIds: string[];
   verificationSummary?: SubmissionVerificationSummary;
   currentUserVerifications?: Partial<Record<SubmissionVerificationField, SubmissionVerification>>;
+}
+
+export interface UserLyricPreference {
+  userId: string;
+  trackId: string;
+  visibleLanguageIds: string[];
+  updatedAt: string;
+}
+
+export interface MediaLibrary {
+  id: string;
+  title: string;
+  kind: MediaLibraryKind;
+  baseUrl?: string;
+  isPrimary: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MediaMirror {
+  id: string;
+  libraryId: string;
+  trackId: string;
+  kind: MediaKind;
+  format?: AssetFormat;
+  sourceUrl: string;
+  playbackUrl?: string;
+  urlSource?: MediaUrlSource;
+  checksumSha256?: string;
+  isAvailable: boolean;
+  lastCheckedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface OfflinePackage {
@@ -323,6 +364,8 @@ export interface CatalogSnapshot {
   mediaAssets: MediaAsset[];
   videoGenerationJobs: VideoGenerationJob[];
   trackRequests: TrackRequest[];
+  mediaLibraries: MediaLibrary[];
+  mediaMirrors: MediaMirror[];
 }
 
 export interface SearchResult {
@@ -390,6 +433,141 @@ const lyricSet: LyricSet = {
   segments: lyricSegments
 };
 
+const importedLyricLanguages: LyricLanguage[] = [
+  { id: "lang-import-fa", code: "fa", name: "Persian", direction: "rtl", role: "original", isPublished: true },
+  { id: "lang-import-en", code: "en", name: "English", direction: "ltr", role: "translation", isPublished: true },
+  { id: "lang-import-ur", code: "ur", name: "Urdu", direction: "rtl", role: "translation", isPublished: true },
+  { id: "lang-import-fa-latin", code: "fa-Latn", name: "Persian Transliteration", direction: "ltr", role: "transliteration", isPublished: true }
+];
+
+const importedLyricSegments: LyricSegment[] = [
+  {
+    id: "segment-import-001",
+    startMs: 0,
+    endMs: 30000,
+    textByLanguageId: {
+      "lang-import-fa": "تنم…",
+      "lang-import-en": "My body…",
+      "lang-import-ur": "میرا جسم…",
+      "lang-import-fa-latin": "Tanam…"
+    }
+  },
+  {
+    id: "segment-import-002",
+    startMs: 30000,
+    endMs: 75000,
+    textByLanguageId: {
+      "lang-import-fa": "تنم فرسودہ جاں پارہ…",
+      "lang-import-en": "My body is dissolving…",
+      "lang-import-ur": "میرا جسم ناکارہ اور ٹکٹرے ٹکڑے ہو گیا ہے…",
+      "lang-import-fa-latin": "Tanam farsooda, jaan para…"
+    }
+  },
+  {
+    id: "segment-import-003",
+    startMs: 75000,
+    endMs: 100000,
+    textByLanguageId: {
+      "lang-import-fa": "تنم فرسودہ جاں پارہ\nز ہجراں، یا رسول اللہ (صلی اللہ علیہ وسلم)",
+      "lang-import-en": "My body is dissolving in your separation,\nAnd my soul is breaking into pieces, oh Messenger of Allah.",
+      "lang-import-ur": "میرا جسم ناکارہ اور ٹکٹرے ٹکڑے ہو گیا ہے\nآپ کی جدائی میں یا رسول اللہ ﷺ",
+      "lang-import-fa-latin": "Tanam farsooda, jaan para,\nZe hijran, ya Rasulallah."
+    }
+  },
+  {
+    id: "segment-import-004",
+    startMs: 100000,
+    endMs: 120000,
+    textByLanguageId: {
+      "lang-import-fa": "دلم  پژمردہ آوارہ\nز عصیاں، یا رسول اللہ (صلی اللہ علیہ وسلم)",
+      "lang-import-en": "Due to my sins, my heart is weak,\nand becoming enticed, oh Messenger of Allah.",
+      "lang-import-ur": "میرا دل بھٹک رہا ہے اور دل گناہوں کے بوجھ سے\nمرجھا چکا ہے یا رسول اللہ ﷺ",
+      "lang-import-fa-latin": "Dillam paz murda aawara,\nZe isyaan, ya Rasulallah."
+    }
+  },
+  {
+    id: "segment-import-005",
+    startMs: 120000,
+    endMs: 140000,
+    textByLanguageId: {
+      "lang-import-fa": "تنم فرسودہ جاں پارہ\nز ہجراں، یا رسول اللہ (صلی اللہ علیہ وسلم)",
+      "lang-import-en": "My body is dissolving in your separation,\nAnd my soul is breaking into pieces, oh Messenger of Allah.",
+      "lang-import-ur": "میرا جسم ناکارہ اور ٹکٹرے ٹکڑے ہو گیا ہے\nآپ کی جدائی میں یا رسول اللہ ﷺ",
+      "lang-import-fa-latin": "Tanam farsooda, jaan para,\nZe hijran, ya Rasulallah."
+    }
+  },
+  {
+    id: "segment-import-006",
+    startMs: 140000,
+    endMs: 220000,
+    textByLanguageId: {
+      "lang-import-fa": "چوں سوۓ من گذر آری، من مسکین ز ناداری\nفداۓ نقش نعلینت کنم جاں، یا رسول اللہ  (صلی اللہ علیہ وسلم)",
+      "lang-import-en": "When you pass by me, then even in my immense poverty, ecstatically,\nI must sacrifice my soul on the impression of your Blessed Sandal, oh Messenger of Allah.",
+      "lang-import-ur": "کبھی خواب میں ہی اپنا جلوہ دکھا دیجیے اس عاجز،غریب و مسکین سائل کو\nتو میں پھر آپ کے نعلینِ مبارک کے نقش پر فدا ہو جاوں گا یا رسول اللہ ﷺ",
+      "lang-import-fa-latin": "Choon soo’e mun guzar aari, manne miskeen zanaa daari,\nFida-e-Naqsh-e-Nalainat, kunam ja, ya Rasulallah."
+    }
+  },
+  {
+    id: "segment-import-007",
+    startMs: 220000,
+    endMs: 240000,
+    textByLanguageId: {
+      "lang-import-fa": "تنم فرسودہ جاں پارہ\nز ہجراں، یا رسول اللہ (صلی اللہ علیہ وسلم)",
+      "lang-import-en": "My body is dissolving in your separation,\nAnd my soul is breaking into pieces, oh Messenger of Allah.",
+      "lang-import-ur": "میرا جسم ناکارہ اور ٹکٹرے ٹکڑے ہو گیا ہے\nآپ کی جدائی میں یا رسول اللہ ﷺ",
+      "lang-import-fa-latin": "Tanam farsooda, jaan para,\nZe hijran, ya Rasulallah."
+    }
+  },
+  {
+    id: "segment-import-008",
+    startMs: 240000,
+    endMs: 290000,
+    textByLanguageId: {
+      "lang-import-fa": "زکردہ خیش حیرانم، سیاہ شد روز عصیانم\nپشیمانم، پشیمانم، پشیمانم،  یا رسول اللہ  (صلی اللہ علیہ وسلم)",
+      "lang-import-en": "I am worried due to my misdeeds, and I feel that my sins have blackened my heart,\nI am in distress, I am in distress. I am in distress, oh Messenger of Allah.",
+      "lang-import-ur": "میں نے جو کچھ کیا ہے بہت حیران ہوں، روزِ حساب میرا اعمال نامہ گناہوں سے سیاہ ہو گا\nمیں انتہائی پشیمان اور سخت شرمندہ ہوں، یا رسول اللہ ﷺ",
+      "lang-import-fa-latin": "Ze kharda khaish hairaanam, siyaa shud roze isyaanam,\nPashemaanam, pashemaanam. Pashemaanam, ya Rasulallah."
+    }
+  },
+  {
+    id: "segment-import-009",
+    startMs: 290000,
+    endMs: 345000,
+    textByLanguageId: {
+      "lang-import-fa": "چوں بازوۓ شفاعت را کشا بر گناہگاراں\nمکن محروم جامی را در آں، یا رسول اللہ  (صلی اللہ علیہ وسلم)",
+      "lang-import-en": "When you raise your hands to intercede for the sinners,\nThen do not deprive Jami of your exalted intercession, oh Messenger of Allah.",
+      "lang-import-ur": "جب روزِ قیامت آپ اپنی شفاعت کا بازو لمبا کر کے گناہ گاروں کے سر پر پھیلا دیں گے\nاس روز اس عاجز جامی کو بھول نہ جایئے گا، اس جان جوکھوں کی نازک گھڑی میں یا رسول اللہﷺ",
+      "lang-import-fa-latin": "Choon baazoo’e shafaa’at raa, khushaa’i bar gunaagara,\nMakun mahruume Jaami raa, daraa aan, ya Rasulallah."
+    }
+  },
+  {
+    id: "segment-import-010",
+    startMs: 345000,
+    endMs: 366000,
+    textByLanguageId: {
+      "lang-import-fa": "تنم فرسودہ جاں پارہ\nز ہجراں، یا رسول اللہ (صلی اللہ علیہ وسلم)",
+      "lang-import-en": "My body is dissolving in your separation,\nAnd my soul is breaking into pieces, oh Messenger of Allah.",
+      "lang-import-ur": "میرا جسم ناکارہ اور ٹکٹرے ٹکڑے ہو گیا ہے\nآپ کی جدائی میں یا رسول اللہ ﷺ",
+      "lang-import-fa-latin": "Tanam farsooda, jaan para,\nZe hijran, ya Rasulallah."
+    }
+  }
+];
+
+function importedLyricSet(id: string, segmentPrefix: string): LyricSet {
+  return {
+    id,
+    source: "sidecar",
+    languages: importedLyricLanguages,
+    segments: importedLyricSegments.map((segment) => ({
+      ...segment,
+      id: segment.id.replace("segment-import", segmentPrefix)
+    }))
+  };
+}
+
+const tanamLyricSet = importedLyricSet("lyrics-tanam-farsooda", "segment-tanam");
+const yaNabiLyricSet = importedLyricSet("lyrics-ya-nabi-salam", "segment-ya-nabi");
+
 export function toLegacyLyricsDocument(set: LyricSet, preferredLanguageId = set.languages[0]?.id ?? ""): LegacyLyricsDocument {
   const language = set.languages.find((item) => item.id === preferredLanguageId) ?? set.languages[0];
   return {
@@ -411,6 +589,9 @@ const mediaAssets: MediaAsset[] = [
     durationMs: 258000,
     sizeBytes: 58200000,
     storageKey: "masters/audio/sindh-river.flac",
+    sourceUrl: "https://github.com/srmrox/dervaish-media/blob/main/audio/sindh-river.flac",
+    playbackUrl: "https://raw.githubusercontent.com/srmrox/dervaish-media/main/audio/sindh-river.flac",
+    urlSource: "github",
     isMaster: true,
     originalFilename: "sindh-river-master.wav",
     mimeType: "audio/flac",
@@ -424,6 +605,9 @@ const mediaAssets: MediaAsset[] = [
     durationMs: 258000,
     sizeBytes: 4200000,
     storageKey: "playback/audio/sindh-river.opus",
+    sourceUrl: "https://github.com/srmrox/dervaish-media/blob/main/audio/sindh-river.opus",
+    playbackUrl: "https://raw.githubusercontent.com/srmrox/dervaish-media/main/audio/sindh-river.opus",
+    urlSource: "github",
     isMaster: false,
     mimeType: "audio/ogg"
   },
@@ -434,6 +618,9 @@ const mediaAssets: MediaAsset[] = [
     durationMs: 551000,
     sizeBytes: 784000000,
     storageKey: "masters/video/sindh-river-session.mkv",
+    sourceUrl: "https://github.com/srmrox/dervaish-media/blob/main/video/sindh-river-session.mkv",
+    playbackUrl: "https://raw.githubusercontent.com/srmrox/dervaish-media/main/video/sindh-river-session.mkv",
+    urlSource: "github",
     isMaster: true,
     mimeType: "video/x-matroska"
   },
@@ -444,10 +631,69 @@ const mediaAssets: MediaAsset[] = [
     durationMs: 551000,
     sizeBytes: 182000000,
     storageKey: "playback/video/sindh-river-session-1080.mp4",
+    sourceUrl: "https://raw.githubusercontent.com/srmrox/dervaish-media/main/video/sindh-river-session-1080.mp4",
+    playbackUrl: "https://raw.githubusercontent.com/srmrox/dervaish-media/main/video/sindh-river-session-1080.mp4",
+    urlSource: "github",
     isMaster: false,
     mimeType: "video/mp4",
     width: 1920,
     height: 1080
+  },
+  {
+    id: "asset-tanam-audio",
+    kind: "audio",
+    format: "mp3",
+    durationMs: 366000,
+    sizeBytes: 5940000,
+    storageKey: "imported-media/tanam-farsooda-ja-para/audio.mp3",
+    playbackUrl: "/imported-media/tanam-farsooda-ja-para/audio.mp3",
+    urlSource: "storage",
+    isMaster: true,
+    originalFilename: "audio.mp3",
+    mimeType: "audio/mpeg"
+  },
+  {
+    id: "asset-tanam-image",
+    kind: "image",
+    format: "jpg",
+    durationMs: 0,
+    sizeBytes: 20480,
+    storageKey: "imported-media/tanam-farsooda-ja-para/image.jpg",
+    playbackUrl: "/imported-media/tanam-farsooda-ja-para/image.jpg",
+    urlSource: "storage",
+    isMaster: true,
+    originalFilename: "image.jpg",
+    mimeType: "image/jpeg",
+    width: 256,
+    height: 326
+  },
+  {
+    id: "asset-ya-nabi-audio",
+    kind: "audio",
+    format: "mp3",
+    durationMs: 366000,
+    sizeBytes: 5940000,
+    storageKey: "imported-media/ya-nabi-salam-alayka/audio.mp3",
+    playbackUrl: "/imported-media/ya-nabi-salam-alayka/audio.mp3",
+    urlSource: "storage",
+    isMaster: true,
+    originalFilename: "audio.mp3",
+    mimeType: "audio/mpeg"
+  },
+  {
+    id: "asset-ya-nabi-image",
+    kind: "image",
+    format: "jpg",
+    durationMs: 0,
+    sizeBytes: 20480,
+    storageKey: "imported-media/ya-nabi-salam-alayka/image.jpg",
+    playbackUrl: "/imported-media/ya-nabi-salam-alayka/image.jpg",
+    urlSource: "storage",
+    isMaster: true,
+    originalFilename: "image.jpg",
+    mimeType: "image/jpeg",
+    width: 256,
+    height: 326
   }
 ];
 
@@ -500,6 +746,19 @@ export const demoCatalog: CatalogSnapshot = {
       trackIds: ["track-sindh-river"],
       createdAt: "2026-03-10T08:00:00.000Z",
       updatedAt: "2026-03-10T08:00:00.000Z"
+    },
+    {
+      id: "collection-imported-lyrics-video",
+      title: "Imported Lyrics Video Collection",
+      ownerUserId: "admin-web",
+      createdByRole: "admin",
+      visibility: "public",
+      isCurated: true,
+      year: 2026,
+      artworkUrl: "/imported-media/tanam-farsooda-ja-para/image.jpg",
+      trackIds: ["track-tanam-farsooda", "track-ya-nabi-salam"],
+      createdAt: "2026-05-09T00:00:00.000Z",
+      updatedAt: "2026-05-09T00:00:00.000Z"
     }
   ],
   tracks: [
@@ -526,6 +785,54 @@ export const demoCatalog: CatalogSnapshot = {
         metadataSnapshotId: "snapshot-001"
       },
       mediaAssets: mediaAssets.filter((asset) => asset.id.startsWith("asset-river"))
+    },
+    {
+      id: "track-tanam-farsooda",
+      title: "Tanam Farsooda Jaan Para",
+      artistId: "artist-abida",
+      collectionId: "collection-imported-lyrics-video",
+      reciterIds: ["person-zulfikar"],
+      writerIds: ["person-jami"],
+      durationMs: 366000,
+      visibility: "public",
+      language: "fa",
+      lyricSet: tanamLyricSet,
+      lyrics: toLegacyLyricsDocument(tanamLyricSet),
+      availableOffline: true,
+      archiveRecordIds: ["archive-imported-lyrics-video"],
+      generatedVideoIds: [],
+      provenance: {
+        sourceName: "OneDrive Lyrics Video import",
+        importedAt: "2026-05-09T00:00:00.000Z",
+        originalFilename: "Tanam Farsooda Ja Para/audio.mp3",
+        checksumSha256: "onedrive-import-tanam-farsooda",
+        metadataSnapshotId: "snapshot-imported-lyrics-video"
+      },
+      mediaAssets: mediaAssets.filter((asset) => asset.id.startsWith("asset-tanam"))
+    },
+    {
+      id: "track-ya-nabi-salam",
+      title: "Ya Nabi Salam Alayka",
+      artistId: "artist-abida",
+      collectionId: "collection-imported-lyrics-video",
+      reciterIds: ["person-zulfikar"],
+      writerIds: ["person-jami"],
+      durationMs: 366000,
+      visibility: "public",
+      language: "fa",
+      lyricSet: yaNabiLyricSet,
+      lyrics: toLegacyLyricsDocument(yaNabiLyricSet),
+      availableOffline: true,
+      archiveRecordIds: ["archive-imported-lyrics-video"],
+      generatedVideoIds: [],
+      provenance: {
+        sourceName: "OneDrive Lyrics Video import",
+        importedAt: "2026-05-09T00:00:00.000Z",
+        originalFilename: "Ya Nabi Salam Alayka/audio.mp3",
+        checksumSha256: "onedrive-import-ya-nabi-salam",
+        metadataSnapshotId: "snapshot-imported-lyrics-video"
+      },
+      mediaAssets: mediaAssets.filter((asset) => asset.id.startsWith("asset-ya-nabi"))
     }
   ],
   videos: [
@@ -596,12 +903,38 @@ export const demoCatalog: CatalogSnapshot = {
       relatedTrackIds: ["track-sindh-river"],
       exportFormats: ["json", "jsonld", "csv"],
       revisionCount: 3
+    },
+    {
+      id: "archive-imported-lyrics-video",
+      title: "Imported OneDrive lyric video source files",
+      summary: "Audio, cover images, and timed multilingual lyric files imported from the Lyrics Video/new folder.",
+      visibility: "public",
+      tags: ["import", "lyrics", "audio", "onedrive"],
+      citations: [
+        {
+          id: "citation-imported-lyrics-video",
+          title: "Lyrics Video/new OneDrive folder",
+          sourceType: "field-recording",
+          author: "Dervaish archive import",
+          publishedAt: "2026-05-09",
+          note: "Local import from C:\\Users\\Msi\\OneDrive - Hina Shahrukh Group Ltd\\Dervaish\\Lyrics Video\\new."
+        }
+      ],
+      ratings: [],
+      editorialNotes: "The Ya Nabi Salam Alayka folder carried Tanam Farsooda lyric metadata; folder name was preserved as the track title for review.",
+      contributorNotes: ["Imported media includes audio.mp3, image.jpg, and sidecar lyric timing files."],
+      relatedArtistIds: ["artist-abida"],
+      relatedCollectionIds: ["collection-imported-lyrics-video"],
+      relatedTrackIds: ["track-tanam-farsooda", "track-ya-nabi-salam"],
+      exportFormats: ["json", "csv"],
+      revisionCount: 1
     }
   ],
   submissions: [
     {
       id: "submission-001",
       submitterId: "user-guest-1",
+      correctionFields: [],
       title: "Alternate field recording cassette transfer",
       voice: "Community contributor",
       writer: "Traditional",
@@ -652,6 +985,112 @@ export const demoCatalog: CatalogSnapshot = {
       upvotedByCurrentUser: false,
       createdAt: "2026-03-10T11:00:00.000Z",
       updatedAt: "2026-03-10T11:00:00.000Z"
+    }
+  ],
+  mediaLibraries: [
+    {
+      id: "library-primary-github",
+      title: "Primary GitHub Media Mirror",
+      kind: "github",
+      baseUrl: "https://github.com/srmrox/dervaish-media",
+      isPrimary: true,
+      createdAt: "2026-03-10T08:00:00.000Z",
+      updatedAt: "2026-03-10T08:00:00.000Z"
+    },
+    {
+      id: "library-imported-web-public",
+      title: "Imported Web Public Media",
+      kind: "storage",
+      baseUrl: "/imported-media",
+      isPrimary: false,
+      createdAt: "2026-05-09T00:00:00.000Z",
+      updatedAt: "2026-05-09T00:00:00.000Z"
+    }
+  ],
+  mediaMirrors: [
+    {
+      id: "mirror-river-opus-primary",
+      libraryId: "library-primary-github",
+      trackId: "track-sindh-river",
+      kind: "audio",
+      format: "opus",
+      sourceUrl: "https://github.com/srmrox/dervaish-media/blob/main/audio/sindh-river.opus",
+      playbackUrl: "https://raw.githubusercontent.com/srmrox/dervaish-media/main/audio/sindh-river.opus",
+      urlSource: "github",
+      isAvailable: true,
+      lastCheckedAt: "2026-03-10T08:00:00.000Z",
+      createdAt: "2026-03-10T08:00:00.000Z",
+      updatedAt: "2026-03-10T08:00:00.000Z"
+    },
+    {
+      id: "mirror-river-video-primary",
+      libraryId: "library-primary-github",
+      trackId: "track-sindh-river",
+      kind: "video",
+      format: "mp4",
+      sourceUrl: "https://raw.githubusercontent.com/srmrox/dervaish-media/main/video/sindh-river-session-1080.mp4",
+      playbackUrl: "https://raw.githubusercontent.com/srmrox/dervaish-media/main/video/sindh-river-session-1080.mp4",
+      urlSource: "github",
+      isAvailable: true,
+      lastCheckedAt: "2026-03-10T08:00:00.000Z",
+      createdAt: "2026-03-10T08:00:00.000Z",
+      updatedAt: "2026-03-10T08:00:00.000Z"
+    },
+    {
+      id: "mirror-tanam-audio-public",
+      libraryId: "library-imported-web-public",
+      trackId: "track-tanam-farsooda",
+      kind: "audio",
+      format: "mp3",
+      sourceUrl: "/imported-media/tanam-farsooda-ja-para/audio.mp3",
+      playbackUrl: "/imported-media/tanam-farsooda-ja-para/audio.mp3",
+      urlSource: "storage",
+      isAvailable: true,
+      lastCheckedAt: "2026-05-09T00:00:00.000Z",
+      createdAt: "2026-05-09T00:00:00.000Z",
+      updatedAt: "2026-05-09T00:00:00.000Z"
+    },
+    {
+      id: "mirror-tanam-image-public",
+      libraryId: "library-imported-web-public",
+      trackId: "track-tanam-farsooda",
+      kind: "image",
+      format: "jpg",
+      sourceUrl: "/imported-media/tanam-farsooda-ja-para/image.jpg",
+      playbackUrl: "/imported-media/tanam-farsooda-ja-para/image.jpg",
+      urlSource: "storage",
+      isAvailable: true,
+      lastCheckedAt: "2026-05-09T00:00:00.000Z",
+      createdAt: "2026-05-09T00:00:00.000Z",
+      updatedAt: "2026-05-09T00:00:00.000Z"
+    },
+    {
+      id: "mirror-ya-nabi-audio-public",
+      libraryId: "library-imported-web-public",
+      trackId: "track-ya-nabi-salam",
+      kind: "audio",
+      format: "mp3",
+      sourceUrl: "/imported-media/ya-nabi-salam-alayka/audio.mp3",
+      playbackUrl: "/imported-media/ya-nabi-salam-alayka/audio.mp3",
+      urlSource: "storage",
+      isAvailable: true,
+      lastCheckedAt: "2026-05-09T00:00:00.000Z",
+      createdAt: "2026-05-09T00:00:00.000Z",
+      updatedAt: "2026-05-09T00:00:00.000Z"
+    },
+    {
+      id: "mirror-ya-nabi-image-public",
+      libraryId: "library-imported-web-public",
+      trackId: "track-ya-nabi-salam",
+      kind: "image",
+      format: "jpg",
+      sourceUrl: "/imported-media/ya-nabi-salam-alayka/image.jpg",
+      playbackUrl: "/imported-media/ya-nabi-salam-alayka/image.jpg",
+      urlSource: "storage",
+      isAvailable: true,
+      lastCheckedAt: "2026-05-09T00:00:00.000Z",
+      createdAt: "2026-05-09T00:00:00.000Z",
+      updatedAt: "2026-05-09T00:00:00.000Z"
     }
   ]
 };
