@@ -37,10 +37,14 @@ class VideoGenerationJob(TimestampedModel):
     voice = models.CharField(max_length=180, blank=True)
     writer = models.CharField(max_length=180, blank=True)
     status = models.CharField(max_length=24, choices=VideoGenerationStatus.choices, default=VideoGenerationStatus.QUEUED)
+    celery_task_id = models.CharField(max_length=120, blank=True)
+    render_payload = models.JSONField(default=dict, blank=True)
     log = models.TextField(blank=True)
     failure_reason = models.TextField(blank=True)
     preview_asset = models.ForeignKey("media.MediaAsset", related_name="video_preview_jobs", null=True, blank=True, on_delete=models.SET_NULL)
     output_asset = models.ForeignKey("media.MediaAsset", related_name="video_output_jobs", null=True, blank=True, on_delete=models.SET_NULL)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         indexes = [models.Index(fields=["status", "created_at"])]

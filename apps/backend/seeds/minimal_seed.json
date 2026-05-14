@@ -53,5 +53,448 @@
       "name": "Admin",
       "description": "Administrative role for preservation and operational controls."
     }
+  },
+  {
+    "model": "accounts.user",
+    "pk": 1,
+    "fields": {
+      "password": "!",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "seed-contributor",
+      "first_name": "",
+      "last_name": "",
+      "email": "contributor@example.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2026-01-01T00:00:00Z",
+      "display_name": "Ayesha",
+      "role": "contributor",
+      "trust_score": 25,
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "media.mediaasset",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "title": "Ya Nabi Salam Alayka master",
+      "kind": "audio",
+      "storage_key": "originals/audio/ya-nabi-salam-alayka.mp3",
+      "original_filename": "ya-nabi-salam-alayka.mp3",
+      "mime_type": "audio/mpeg",
+      "checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size_bytes": 5242880,
+      "duration_ms": 258000,
+      "width": null,
+      "height": null,
+      "source_url": "",
+      "is_master": true,
+      "status": "ready",
+      "uploaded_by": 1,
+      "metadata": { "seed": true, "source": "minimal_seed" }
+    }
+  },
+  {
+    "model": "media.mediarendition",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "asset": 1,
+      "format": "mp3",
+      "codec": "mp3",
+      "bitrate_kbps": 192,
+      "width": null,
+      "height": null,
+      "storage_key": "renditions/audio/ya-nabi-salam-alayka-192.mp3",
+      "size_bytes": 3145728,
+      "status": "ready",
+      "is_playable": true
+    }
+  },
+  {
+    "model": "media.mediaderivative",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "asset": 1,
+      "kind": "waveform",
+      "storage_key": "derivatives/waveforms/ya-nabi-salam-alayka.json",
+      "format": "json",
+      "metadata": { "peaks": [0.1, 0.4, 0.2, 0.7] },
+      "status": "ready"
+    }
+  },
+  {
+    "model": "catalog.person",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "visibility": "public",
+      "created_by": 1,
+      "updated_by": 1,
+      "name": "Zulfikar Ali",
+      "slug": "zulfikar-ali",
+      "aliases": [],
+      "primary_role": "reciter",
+      "biography": "Seed reciter profile for local platform QA.",
+      "origin": "Pakistan",
+      "external_ids": {}
+    }
+  },
+  {
+    "model": "catalog.person",
+    "pk": 2,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "visibility": "public",
+      "created_by": 1,
+      "updated_by": 1,
+      "name": "Traditional",
+      "slug": "traditional",
+      "aliases": [],
+      "primary_role": "writer",
+      "biography": "Traditional devotional attribution used for seed records.",
+      "origin": "",
+      "external_ids": {}
+    }
+  },
+  {
+    "model": "catalog.collection",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "visibility": "public",
+      "created_by": 1,
+      "updated_by": 1,
+      "title": "Foundational Salawat",
+      "slug": "foundational-salawat",
+      "owner": null,
+      "is_curated": true,
+      "artwork": null,
+      "share_token": ""
+    }
+  },
+  {
+    "model": "catalog.track",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "visibility": "public",
+      "created_by": 1,
+      "updated_by": 1,
+      "title": "Ya Nabi Salam Alayka",
+      "slug": "ya-nabi-salam-alayka",
+      "duration_ms": 258000,
+      "primary_language_code": "ur",
+      "collection": 1,
+      "media_assets": [1],
+      "published_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.trackcredit",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "track": 1,
+      "person": 1,
+      "role": "reciter",
+      "display_order": 1,
+      "note": ""
+    }
+  },
+  {
+    "model": "catalog.trackcredit",
+    "pk": 2,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "track": 1,
+      "person": 2,
+      "role": "writer",
+      "display_order": 2,
+      "note": "Traditional attribution"
+    }
+  },
+  {
+    "model": "media.caption",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "asset": 1,
+      "track": 1,
+      "language_code": "en",
+      "label": "English translation",
+      "format": "webvtt",
+      "storage_key": "captions/ya-nabi-salam-alayka.en.vtt",
+      "is_published": true
+    }
+  },
+  {
+    "model": "media.chapter",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "track": 1,
+      "title": "Opening salawat",
+      "language_code": "en",
+      "start_ms": 0,
+      "end_ms": 10000,
+      "notes": "Seed chapter for playback QA."
+    }
+  },
+  {
+    "model": "lyrics.lyricset",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "track": 1,
+      "title": "Canonical synchronized lyrics",
+      "source": "canonical",
+      "status": "published",
+      "version": 1,
+      "is_canonical": true
+    }
+  },
+  {
+    "model": "lyrics.lyriclanguage",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "lyric_set": 1,
+      "code": "ur",
+      "name": "Urdu",
+      "role": "original",
+      "direction": "rtl",
+      "display_order": 1,
+      "is_published": true
+    }
+  },
+  {
+    "model": "lyrics.lyriclanguage",
+    "pk": 2,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "lyric_set": 1,
+      "code": "en",
+      "name": "English",
+      "role": "translation",
+      "direction": "ltr",
+      "display_order": 2,
+      "is_published": true
+    }
+  },
+  {
+    "model": "lyrics.lyricsegment",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "lyric_set": 1,
+      "start_ms": 0,
+      "end_ms": 5000,
+      "text_by_language": {
+        "1": "درود و سلام",
+        "2": "Blessings and peace"
+      }
+    }
+  },
+  {
+    "model": "lyrics.lyricsegment",
+    "pk": 2,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "lyric_set": 1,
+      "start_ms": 5000,
+      "end_ms": 10000,
+      "text_by_language": {
+        "1": "یا نبی سلام علیک",
+        "2": "O Prophet, peace be upon you"
+      }
+    }
+  },
+  {
+    "model": "archive.vocabularyterm",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "vocabulary": "source_type",
+      "code": "field_recording",
+      "label": "Field recording",
+      "uri": "",
+      "description": "Recorded or transferred devotional source."
+    }
+  },
+  {
+    "model": "archive.citation",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "title": "Local archive cassette transfer",
+      "source_type": "field_recording",
+      "author": "Dervaish seed archive",
+      "published_at": "2026",
+      "url": "",
+      "note": "Seed citation for local QA."
+    }
+  },
+  {
+    "model": "archive.archiverecord",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "visibility": "public",
+      "created_by": 1,
+      "updated_by": 1,
+      "title": "River recording provenance",
+      "slug": "river-recording-provenance",
+      "summary": "Seed provenance record connecting a public track to a local cassette transfer.",
+      "editorial_notes": "Use for local API-backed UI smoke tests.",
+      "contributor_notes": [],
+      "tracks": [1],
+      "people": [1],
+      "collections": [1],
+      "citations": [1],
+      "terms": [1]
+    }
+  },
+  {
+    "model": "archive.provenancerecord",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "archive_record": 1,
+      "media_asset": 1,
+      "event_type": "seed_import",
+      "source_name": "Local archive cassette",
+      "source_url": "",
+      "source_identifier": "seed-cassette-001",
+      "checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "note": "Minimal seed provenance.",
+      "metadata": { "seed": true }
+    }
+  },
+  {
+    "model": "archive.sourcerating",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "archive_record": 1,
+      "kind": "editorial",
+      "value": 4,
+      "max_value": 5,
+      "rationale": "Seed source has identifiable custody notes.",
+      "contributor": 1
+    }
+  },
+  {
+    "model": "community.submission",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "submitter": 1,
+      "title": "Submitted Naat",
+      "voice": "Ayesha",
+      "writer": "Traditional",
+      "source_name": "Community cassette note",
+      "notes": "Seed public submission for verification workflow QA.",
+      "status": "submitted",
+      "citations": [1],
+      "media_assets": [1],
+      "lyric_set": 1,
+      "reviewed_by": null,
+      "reviewed_at": null
+    }
+  },
+  {
+    "model": "community.verificationvote",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "submission": 1,
+      "voter": 1,
+      "field": "overall",
+      "vote": "verify",
+      "note": "Seed verification."
+    }
+  },
+  {
+    "model": "community.trackrequest",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "requester": 1,
+      "title": "Missing qawwali",
+      "target_track": null,
+      "reciter_name": "",
+      "writer_name": "",
+      "source_hint": "Community wants a verified recording and source notes.",
+      "status": "open",
+      "moderator_note": ""
+    }
+  },
+  {
+    "model": "community.trackrequestvote",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "request": 1,
+      "user": 1
+    }
+  },
+  {
+    "model": "video_generation.videogenerationjob",
+    "pk": 1,
+    "fields": {
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "requested_by": 1,
+      "submission": 1,
+      "track": 1,
+      "source_asset": 1,
+      "lyric_set": 1,
+      "source_mode": "audio_visualizer",
+      "layout_id": "landscape-1",
+      "resolution": "1080p",
+      "visible_language_ids": [1, 2],
+      "title": "Ya Nabi Salam Alayka",
+      "voice": "Zulfikar Ali",
+      "writer": "Traditional",
+      "status": "queued",
+      "celery_task_id": "",
+      "render_payload": {},
+      "log": "Seed job hidden from anonymous users.",
+      "failure_reason": "",
+      "preview_asset": null,
+      "output_asset": null,
+      "cancelled_at": null,
+      "published_at": null
+    }
   }
 ]

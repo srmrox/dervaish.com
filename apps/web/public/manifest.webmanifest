@@ -1,9 +1,0 @@
-{
-  "name": "Dervaish",
-  "short_name": "Dervaish",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#07110f",
-  "theme_color": "#0d1b17",
-  "description": "Preservation-oriented offline-first media and archive platform."
-}

@@ -9,6 +9,11 @@ This scaffold establishes:
 - canonical Phase 1 models and minimal seed fixtures
 - Phase 2 media upload-session, processing-job, rendition, derivative, and playback-manifest APIs
 - Phase 3 public catalog/archive APIs, archive admin workflows, and archive JSON-LD export
+- Phase 4 lyric editor APIs, import/export, saved language preferences, and companion view shell
+- Phase 5 community submissions, correction drafts, verification/dispute votes, track requests, upvotes, review actions, audit logs, and trust scoring
+- Phase 6 Celery-managed lyric-video jobs with render payloads, logs, preview/output assets, cancellation, and publish approval
+- Phase 7 public archive/listening UI workflow shell with Listen, Companion, Archive, Submit, Community, Admin, and sticky playback surfaces
+- Phase 8 import/export and polish: dry-run import batches, Dervaish/MediaCMS/Omeka S import adapters, search, archive export, readiness, metrics, and API throttling
 
 Install dependencies from this directory:
 
@@ -40,3 +45,46 @@ Phase 3 catalog and archive endpoints:
 - `GET /api/archive/citations/`
 - `GET /api/archive/vocabularies/`
 - `GET /api/archive/provenance/`
+
+Phase 4 lyrics endpoints:
+
+- `GET /api/lyrics/sets/` and `GET /api/lyrics/sets/{id}/`
+- `POST /api/lyrics/sets/{id}/languages/`
+- `PUT /api/lyrics/sets/{id}/segments/`
+- `POST /api/lyrics/sets/{id}/import/`
+- `GET /api/lyrics/sets/{id}/export/{webvtt|lrc|ttml|json}/`
+- `GET /api/me/lyric-preferences/{track_id}/`
+- `PUT /api/me/lyric-preferences/{track_id}/`
+
+Phase 5 community endpoints:
+
+- `POST /api/submissions/`
+- `POST /api/submissions/{id}/submit/`
+- `PATCH /api/submissions/{id}/review/`
+- `POST /api/submissions/{id}/publish/`
+- `POST /api/submissions/{id}/corrections/`
+- `POST /api/submissions/{id}/verifications/`
+- `GET /api/community/submissions/`
+- `GET /api/community/track-requests/`
+- `POST /api/community/track-requests/`
+- `POST /api/community/track-requests/{id}/upvote/`
+- `PATCH /api/community/track-requests/{id}/status/`
+
+Phase 6 video generation endpoints:
+
+- `GET /api/video-generation/jobs/`
+- `POST /api/video-generation/jobs/`
+- `GET /api/video-generation/jobs/{id}/`
+- `POST /api/video-generation/jobs/{id}/cancel/`
+- `POST /api/video-generation/jobs/{id}/publish/`
+
+Phase 8 import/export and ops endpoints:
+
+- `GET /api/search/?q=...`
+- `GET /api/export/archive-records/?type=json`
+- `GET /api/export/archive-records/?type=csv`
+- `GET /ready/`
+- `GET /metrics/`
+- `GET /api/imports/batches/`
+- `POST /api/imports/batches/`
+- `POST /api/imports/batches/{id}/run/`

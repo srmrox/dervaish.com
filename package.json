@@ -3,16 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/platform-web"
   ],
   "scripts": {
-    "dev:web": "npm run dev -w @dervaish/web",
-    "dev:api": "npm run dev -w @dervaish/api",
-    "dev:mobile": "npm run dev -w @dervaish/mobile",
+    "dev:web": "npm run dev -w @dervaish/platform-web",
     "build": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces",
-    "lint": "npm run lint --workspaces"
+    "test:e2e": "npm run test:e2e -w @dervaish/platform-web"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

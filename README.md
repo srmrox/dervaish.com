@@ -1,101 +1,89 @@
 # Dervaish
 
-Dervaish is a preservation-oriented media and archive platform with:
+Dervaish is a greenfield preservation-focused devotional media archive and listening platform.
 
-- web and mobile clients
-- offline-first audio and video playback
-- user and curated Collections with shareable visibility
-- Reciter and Writer credits linked to profile pages
-- personal listening queues
-- community track requests, track upvotes, and submission verification
-- synced lyrics and embedded metadata support
-- direction-aware LTR/RTL lyric rendering
-- URL-backed audio and video playback, including public GitHub media links
-- a source-referenced archive with editorial and community trust signals
-- contributor submissions with multilingual timed lyrics
-- Python/MoviePy lyric-video generation for submitted audio and video sources
+The active implementation is:
 
-## Workspace
+- `apps/backend`: Django, Django REST Framework, Celery, PostgreSQL, Redis, and S3-compatible storage.
+- `apps/platform-web`: React, Vite, API-backed listening and preservation UI.
 
-- `apps/api`: Fastify API with domain routes and mock-backed services
-- `apps/web`: React + Vite PWA shell
-- `apps/mobile`: Expo React Native shell
-- `packages/domain`: shared domain types and seeded demo data
-- `packages/validation`: shared zod schemas
-- `packages/api-client`: shared HTTP client helpers
-- `packages/playback-core`: offline and playback planning utilities
-- `workers/video-generator`: JSON-driven MoviePy worker adapted from the existing video generation sample
+The previous Fastify API, prototype web shell, mobile shell, shared TypeScript packages, standalone video worker, and vendored reference repositories have been removed from the active workspace. MediaCMS and Omeka S remain conceptual references only, as documented in `docs/plan.md`.
 
-## Getting started
+## Backend
 
-1. Install dependencies with `npm install`
-2. Run the API with `npm run dev:api`
-3. Run the web app with `npm run dev:web`
-4. Run the mobile app with `npm run dev:mobile`
-
-Local services for the durable API path are declared in `docker-compose.yml`:
-
-- PostgreSQL for durable catalog/submission data
-- Redis for background job queues
-- MinIO for S3-compatible source and generated media storage
-
-The API defaults `DATABASE_URL` to the Docker Compose PostgreSQL connection:
+Create a virtual environment and install the backend dependencies:
 
 ```bash
-postgres://dervaish:dervaish@localhost:5432/dervaish
+cd apps/backend
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py loaddata seeds/minimal_seed.json
+python manage.py test
 ```
 
-Set `DATABASE_URL=""` to use the seeded in-memory fallback for local smoke tests or UI work without PostgreSQL.
-
-Run the API smoke tests with:
+For local SQLite checks, set `DJANGO_USE_SQLITE=1`.
 
 ```bash
-npm run smoke -w @dervaish/api
+DJANGO_USE_SQLITE=1 python manage.py check
+DJANGO_USE_SQLITE=1 python manage.py makemigrations --check --dry-run
+DJANGO_USE_SQLITE=1 python manage.py test
 ```
 
-The smoke tests cover the hard Collection rename, curated Collection labeling, Reciter/Writer track credits, Collection sharing, private ownership checks, personal queue item lifecycle, track requests, track upvotes, community submission verification, GitHub URL normalization, playback URLs, and language direction metadata.
-
-## Collections and queues
-
-The catalog exposes `collections`, not `releases`. Admin/editor-created Collections render as Curated Collections. User-created Collections can be public or private; private Collections can generate unlisted share-token links.
-
-Personal queues are owner-scoped and available through `/me/queues`. Until real authentication is added, the web app sends `X-Dervaish-User-Id` and `X-Dervaish-Role` headers from the demo role selector.
-
-## Community
-
-Signed-in demo roles (`listener`, `contributor`, `editor`, and `admin`) can:
-
-- post freeform or existing-track requests through `/community/track-requests`
-- toggle request upvotes and catalog track upvotes
-- view the community submission queue at `/community/submissions`
-- verify or dispute submission fields (`writer`, `reciter`, `lyrics`, `source`, and `overall`)
-
-Anonymous users can view public request and track counts, but cannot create requests, vote, or verify submissions.
-
-## Playback URLs and Language Direction
-
-Media assets can carry a `sourceUrl` in addition to `storageKey`. Public GitHub `blob` URLs are normalized to `raw.githubusercontent.com` playback URLs by the API, and ordinary HTTP(S) media URLs pass through directly. Non-HTTP(S) submission media URLs are rejected.
-
-Lyric languages use their `direction` field as the display source of truth. Web and mobile clients apply LTR/RTL direction and text alignment per language so mixed-language lyric blocks keep controls stable while lyric text follows the correct script direction.
-
-## UI design system
-
-Web UI elements, icon usage, interaction rules, and workflow patterns are documented in [`docs/design-system.md`](docs/design-system.md). Use that guide when adding or changing controls so icon-only actions stay accessible and dense archive workflows remain consistent.
-
-## Video generation worker
-
-Install the Python worker dependencies with:
+Run the backend API:
 
 ```bash
-pip install -r workers/video-generator/requirements.txt
+python manage.py runserver 0.0.0.0:8000
 ```
 
-Render a JSON job with:
+Local services for the production-shaped path are declared in `docker-compose.yml`:
+
+- PostgreSQL for durable catalog, archive, submission, and job data.
+- Redis for Celery queues.
+- MinIO for S3-compatible original, rendition, caption, thumbnail, waveform, and generated media storage.
+
+## Platform Web
+
+Install JavaScript dependencies from the repository root:
 
 ```bash
-python workers/video-generator/render_job.py --job workers/video-generator/sample-job.json
+npm install
 ```
 
-Set `IMAGEMAGICK_BINARY` if MoviePy needs an explicit ImageMagick executable for text rendering.
+Run the web app:
 
-This is an implementation foundation for the v1 plan. It includes the core architecture, seeded entities, APIs, and application shells rather than a full production-ready media platform.
+```bash
+VITE_DERVAISH_API_BASE_URL=http://localhost:8000 npm run dev:web
+```
+
+Build and typecheck:
+
+```bash
+npm run typecheck
+npm run build
+```
+
+The web app is API-only. It expects a running Dervaish backend and does not fall back to bundled mock catalog data.
+
+## Browser QA
+
+Install Playwright Chromium once:
+
+```bash
+npx playwright install chromium
+```
+
+With the backend running and seeded, run:
+
+```bash
+VITE_DERVAISH_API_BASE_URL=http://localhost:8000 npm run test:e2e
+```
+
+The Playwright smoke suite covers desktop and mobile first paint, workflow navigation, sticky playback controls, RTL/LTR lyric rendering, archive responsiveness, submission form focus, and protected/empty operational states.
+
+## Design and Architecture
+
+- `docs/plan.md`: greenfield architecture and phased rebuild plan.
+- `docs/design-system.md`: UI and workflow design rules.
+- `docs/refactor-redundancy-and-qa.md`: QA report and redundancy inventory.

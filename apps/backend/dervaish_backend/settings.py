@@ -8,6 +8,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-dervaish-secret")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = [host for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host]
+CORS_ALLOWED_ORIGINS = [
+    origin
+    for origin in os.getenv("DJANGO_CORS_ALLOWED_ORIGINS", "http://localhost:5174,http://127.0.0.1:5174").split(",")
+    if origin
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -18,6 +23,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework.authtoken",
+    "corsheaders",
     "common",
     "accounts",
     "audit",
@@ -27,12 +33,14 @@ INSTALLED_APPS = [
     "lyrics",
     "community",
     "video_generation",
+    "imports",
     "public",
     "dervaish_admin",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -99,6 +107,14 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.getenv("DRF_ANON_THROTTLE_RATE", "120/min"),
+        "user": os.getenv("DRF_USER_THROTTLE_RATE", "600/min"),
+    },
 }
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
@@ -117,3 +133,4 @@ MEDIA_PUBLIC_BASE_URL = os.getenv("MEDIA_PUBLIC_BASE_URL", f"{AWS_S3_ENDPOINT_UR
 MEDIA_LOCAL_UPLOAD_BASE_URL = os.getenv("MEDIA_LOCAL_UPLOAD_BASE_URL", "http://localhost:8000/uploads")
 MEDIA_ENABLE_PRESIGNED_UPLOADS = os.getenv("MEDIA_ENABLE_PRESIGNED_UPLOADS", "0") == "1"
 MEDIA_UPLOAD_URL_TTL_MINUTES = int(os.getenv("MEDIA_UPLOAD_URL_TTL_MINUTES", "30"))
+VIDEO_GENERATION_OUTPUT_DIR = os.getenv("VIDEO_GENERATION_OUTPUT_DIR", str(BASE_DIR / "tmp" / "video-output"))

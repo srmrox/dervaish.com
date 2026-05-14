@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.conf import settings
 from django.db import models
 
 from common.models import ReviewState, TimestampedModel
@@ -72,3 +73,18 @@ class LyricSegment(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.start_ms}-{self.end_ms}"
+
+
+class UserLyricPreference(TimestampedModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="lyric_preferences", on_delete=models.CASCADE)
+    track = models.ForeignKey("catalog.Track", related_name="lyric_preferences", on_delete=models.CASCADE)
+    visible_language_ids = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "track"], name="unique_user_track_lyric_preference"),
+        ]
+        indexes = [models.Index(fields=["user", "track"])]
+
+    def __str__(self) -> str:
+        return f"{self.user} lyric preferences for {self.track}"

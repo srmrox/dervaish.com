@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import LyricLanguage, LyricSegment, LyricSet
+from .models import LyricLanguage, LyricSegment, LyricSet, UserLyricPreference
 
 
 class LyricLanguageInline(admin.TabularInline):
@@ -22,3 +22,9 @@ class LyricSetAdmin(admin.ModelAdmin):
 
 admin.site.register(LyricLanguage)
 admin.site.register(LyricSegment)
+
+
+@admin.register(UserLyricPreference)
+class UserLyricPreferenceAdmin(admin.ModelAdmin):
+    list_display = ("user", "track", "visible_language_ids", "updated_at")
+    search_fields = ("user__username", "track__title")
