@@ -208,3 +208,52 @@ class CollectionItem(TimestampedModel):
                 fields=["collection", "rendition"], name="unique_collection_rendition"
             ),
         ]
+
+
+# --- User-facing: library (saved items) and queues --------------------------
+class SavedItem(TimestampedModel):
+    """A rendition saved to a user's library."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, related_name="library", on_delete=models.CASCADE
+    )
+    rendition = models.ForeignKey(Rendition, related_name="saved_by", on_delete=models.CASCADE)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "rendition"], name="unique_user_saved_rendition"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user} saved {self.rendition}"
+
+
+class Queue(TimestampedModel):
+    """An owner-scoped play queue / personal playlist of renditions."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, related_name="queues", on_delete=models.CASCADE
+    )
+    name = models.CharField(max_length=160, default="Up Next")
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.user})"
+
+
+class QueueItem(TimestampedModel):
+    queue = models.ForeignKey(Queue, related_name="items", on_delete=models.CASCADE)
+    rendition = models.ForeignKey(Rendition, on_delete=models.CASCADE)
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["position"]
+        constraints = [
+            models.UniqueConstraint(fields=["queue", "rendition"], name="unique_queue_rendition"),
+        ]
+
+    def __str__(self) -> str:
+        return f"#{self.position} {self.rendition} in {self.queue_id}"

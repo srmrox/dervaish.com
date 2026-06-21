@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Collection, Credit, Kalam, Person, Rendition, Verse
+from .models import (
+    Collection,
+    Credit,
+    Kalam,
+    Person,
+    Queue,
+    QueueItem,
+    Rendition,
+    SavedItem,
+    Verse,
+)
 
 
 class TermField(serializers.SlugRelatedField):
@@ -151,3 +161,41 @@ class CollectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Collection
         fields = ("slug", "title", "description", "is_curated", "rendition_count")
+
+
+# --- User-facing: library + queues (/me/*) ----------------------------------
+class RenditionRefSerializer(serializers.ModelSerializer):
+    """Compact rendition reference for embedding in library/queue responses."""
+
+    kalam_slug = serializers.CharField(source="kalam.slug", read_only=True)
+    kalam_title = serializers.CharField(source="kalam.title", read_only=True)
+
+    class Meta:
+        model = Rendition
+        fields = ("slug", "title", "kalam_slug", "kalam_title", "duration_ms")
+
+
+class SavedItemSerializer(serializers.ModelSerializer):
+    rendition = serializers.SlugRelatedField(slug_field="slug", queryset=Rendition.objects.all())
+    rendition_detail = RenditionRefSerializer(source="rendition", read_only=True)
+
+    class Meta:
+        model = SavedItem
+        fields = ("id", "rendition", "rendition_detail", "created_at")
+
+
+class QueueItemSerializer(serializers.ModelSerializer):
+    rendition = serializers.SlugRelatedField(slug_field="slug", queryset=Rendition.objects.all())
+    rendition_detail = RenditionRefSerializer(source="rendition", read_only=True)
+
+    class Meta:
+        model = QueueItem
+        fields = ("id", "rendition", "rendition_detail", "position")
+
+
+class QueueSerializer(serializers.ModelSerializer):
+    items = QueueItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Queue
+        fields = ("id", "name", "items", "created_at")

@@ -6,7 +6,10 @@ from .models import (
     Credit,
     Kalam,
     Person,
+    Queue,
+    QueueItem,
     Rendition,
+    SavedItem,
     Verse,
 )
 
@@ -63,6 +66,25 @@ class CollectionAdmin(admin.ModelAdmin):
     list_filter = ("is_curated", "visibility")
     search_fields = ("title",)
     prepopulated_fields = {"slug": ("title",)}
+
+
+class QueueItemInline(admin.TabularInline):
+    model = QueueItem
+    extra = 0
+    autocomplete_fields = ("rendition",)
+
+
+@admin.register(Queue)
+class QueueAdmin(admin.ModelAdmin):
+    list_display = ("name", "user", "created_at")
+    search_fields = ("name", "user__username")
+    inlines = [QueueItemInline]
+
+
+@admin.register(SavedItem)
+class SavedItemAdmin(admin.ModelAdmin):
+    list_display = ("user", "rendition", "created_at")
+    search_fields = ("user__username", "rendition__title")
 
 
 admin.site.register(CollectionItem)

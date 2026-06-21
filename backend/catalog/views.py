@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from django.db.models import Q
 from rest_framework import viewsets
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .models import Collection, Kalam, Person, Rendition
 from .serializers import (
@@ -9,10 +12,12 @@ from .serializers import (
     KalamListSerializer,
     PersonDetailSerializer,
     PersonListSerializer,
+    RenditionRefSerializer,
     RenditionSerializer,
 )
 
 PUBLIC = ["public", "unlisted"]
+SEARCH_LIMIT = 20
 
 
 class KalamViewSet(viewsets.ReadOnlyModelViewSet):
@@ -62,3 +67,50 @@ class CollectionViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         return Collection.objects.filter(visibility__in=PUBLIC)
+
+
+class SearchView(APIView):
+    """GET /api/v1/search/?q= → grouped public results.
+
+    DB-agnostic case-insensitive matching (icontains) so it works on SQLite and
+    Postgres alike; Postgres FTS/trigram is a later optimisation (plan §8). Only
+    public/unlisted records are ever returned.
+    """
+
+    permission_classes = []  # public
+
+    def get(self, request):
+        q = request.query_params.get("q", "").strip()
+        empty = {"kalams": [], "people": [], "renditions": [], "collections": []}
+        if not q:
+            return Response(empty)
+
+        kalams = (
+            Kalam.objects.filter(visibility__in=PUBLIC)
+            .filter(
+                Q(title__icontains=q)
+                | Q(title_native__icontains=q)
+                | Q(title_transliterated__icontains=q)
+                | Q(summary__icontains=q)
+            )
+            .select_related("author", "genre")[:SEARCH_LIMIT]
+        )
+        people = (
+            Person.objects.filter(visibility__in=PUBLIC)
+            .filter(Q(name__icontains=q) | Q(name_native__icontains=q))[:SEARCH_LIMIT]
+        )
+        renditions = (
+            Rendition.objects.filter(visibility__in=PUBLIC)
+            .filter(Q(title__icontains=q) | Q(album__icontains=q) | Q(publisher__icontains=q))
+            .select_related("kalam")[:SEARCH_LIMIT]
+        )
+        collections = (
+            Collection.objects.filter(visibility__in=PUBLIC)
+            .filter(Q(title__icontains=q) | Q(description__icontains=q))[:SEARCH_LIMIT]
+        )
+        return Response({
+            "kalams": KalamListSerializer(kalams, many=True).data,
+            "people": PersonListSerializer(people, many=True).data,
+            "renditions": RenditionRefSerializer(renditions, many=True).data,
+            "collections": CollectionSerializer(collections, many=True).data,
+        })

@@ -25,5 +25,24 @@ python manage.py runserver
 Then: `GET /healthz`, `GET /api/v1/kalams/`, `GET /api/v1/kalams/<slug>/`,
 `GET /api/v1/renditions/<slug>/` (returns the playback manifest), `/admin/`.
 
+## API (v1)
+Public reads: `kalams`, `renditions`, `people`, `collections`, `search/?q=`
+(grouped), and `directory/sources` + `directory/mirrors` (federation).
+
+Accounts & user-scoped (token auth — send `Authorization: Token <key>`):
+- `POST /api/v1/auth/register/`, `POST /api/v1/auth/login/`, `POST /api/v1/auth/logout/`
+- `GET /api/v1/me/`, `PATCH /api/v1/me/preferences/`
+- `GET/POST /api/v1/me/library/`, `DELETE /api/v1/me/library/{id}/`
+- `GET/POST /api/v1/me/queues/`, `POST /api/v1/me/queues/{id}/items/`,
+  `DELETE /api/v1/me/queues/{id}/items/{item_id}/`, `POST /api/v1/me/queues/{id}/reorder/`
+
+## Develop
+```bash
+pip install -r requirements-dev.txt   # adds ruff
+ruff check . && python manage.py check && python manage.py test
+```
+CI (`.github/workflows/ci.yml`) runs ruff, missing-migration check, system check,
+and the test suite against a Postgres service on every push/PR.
+
 ## Deploy
 See `DEPLOY-COOLIFY.md`.
