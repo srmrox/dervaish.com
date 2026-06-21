@@ -61,18 +61,54 @@ class RenditionSerializer(serializers.ModelSerializer):
         )
 
     def get_playback(self, obj):
-        """Manifest of playable variants (see Master Build Plan §4A)."""
+        """Manifest of playable variants with resolved mirror URLs (§4A, §federation).
+
+        Each variant carries an ordered `mirrors` list (preferred host first) so
+        the client can fail over / honour the user's enabled-mirror choices. `url`
+        stays as the primary for simple clients. A media asset whose original lives
+        in a GitHub repo (or any external host) is exposed via its normalized
+        `source_url` as a directly-playable variant — no transcode needed.
+        """
+        from federation.github import guess_container, is_github_url, normalize_github_url
+        from federation.services import resolve_mirror_urls
+
         variants = []
         for asset in obj.media_assets.all():
             for v in asset.variants.all():
+                mirrors = resolve_mirror_urls(v.storage_key, asset) if v.storage_key else []
+                primary = mirrors[0]["url"] if mirrors else (v.url or v.storage_key)
                 variants.append({
                     "kind": asset.kind,
                     "container": v.container,
                     "bitrate_kbps": v.bitrate_kbps,
                     "height": v.height,
-                    "url": v.url or v.storage_key,
+                    "url": primary,
+                    "mirrors": mirrors,
                     "streaming": v.is_streaming,
                     "offline_download": v.is_offline_download,
+                    "source": False,
+                })
+            # External / GitHub-hosted original — playable directly via its source URL.
+            if asset.source_url:
+                src = normalize_github_url(asset.source_url)
+                gh = is_github_url(src)
+                variants.append({
+                    "kind": asset.kind,
+                    "container": guess_container(src),
+                    "bitrate_kbps": None,
+                    "height": asset.height,
+                    "url": src,
+                    "mirrors": [{
+                        "mirror": "github-source" if gh else "external-source",
+                        "name": "GitHub source" if gh else "Original source",
+                        "kind": "github" if gh else "external",
+                        "url": src,
+                        "default_enabled": True,
+                        "priority": 10,
+                    }],
+                    "streaming": True,
+                    "offline_download": True,
+                    "source": True,
                 })
         return {"protection_level": obj.protection_level, "variants": variants}
 

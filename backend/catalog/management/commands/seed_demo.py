@@ -20,6 +20,7 @@ from catalog.models import (
     Verse,
 )
 from common.models import EditorialState, Visibility
+from federation.models import ContentSource, MediaAssetMirror, MediaMirror
 from lyrics.models import RenditionVerseTiming
 from media.models import MediaAsset, MediaKind, MediaRendition, ProcessingStatus
 from taxonomy.models import TermKind, VocabularyTerm
@@ -104,7 +105,8 @@ class Command(BaseCommand):
         )
         MediaRendition.objects.get_or_create(
             asset=asset, container="opus",
-            defaults={"bitrate_kbps": 128, "url": "https://cdn.example/seed/tanam.opus",
+            defaults={"bitrate_kbps": 128,
+                      "storage_key": "prod/audio/tanam-farsooda/opus-128.opus",
                       "is_streaming": True, "is_offline_download": True},
         )
 
@@ -144,4 +146,71 @@ class Command(BaseCommand):
         )
         record.citations.add(citation)
 
-        self.stdout.write(self.style.SUCCESS("Seeded demo kalam, rendition, media, and archive record."))
+        # --- Federation: official source + media mirrors ---
+        ContentSource.objects.get_or_create(
+            slug="dervaish-official",
+            defaults={
+                "name": "Dervaish (Official)",
+                "base_url": "https://api.dervaish.com/api/v1",
+                "description": "The official Dervaish catalogue.",
+                "kind": ContentSource.Kind.OFFICIAL,
+                "is_official": True, "is_default": True, "is_enabled": True, "verified": True,
+                "priority": 0,
+            },
+        )
+        r2, _ = MediaMirror.objects.get_or_create(
+            slug="r2-primary",
+            defaults={
+                "name": "Dervaish CDN (Cloudflare R2)",
+                "base_url": "https://media.dervaish.com",
+                "kind": MediaMirror.Kind.R2,
+                "is_official": True, "is_active": True, "is_default_enabled": True,
+                "verified": True, "carries_all": True, "priority": 0,
+            },
+        )
+        github, _ = MediaMirror.objects.get_or_create(
+            slug="github-raw",
+            defaults={
+                "name": "GitHub raw (community mirror)",
+                "base_url": "https://raw.githubusercontent.com/dervaish/media/main",
+                "kind": MediaMirror.Kind.GITHUB,
+                # On by default: GitHub mirrors are offered to clients out of the box
+                # (R2 stays primary by priority; GitHub is an enabled alternate host).
+                "is_official": True, "is_active": True, "is_default_enabled": True,
+                "verified": False, "carries_all": False, "priority": 50,
+            },
+        )
+        MediaAssetMirror.objects.get_or_create(
+            asset=asset, mirror=github, defaults={"available": True},
+        )
+
+        # --- A rendition whose original media lives directly in a GitHub repo. ---
+        # The asset carries only a source_url (a normal github.com/blob link); the
+        # manifest normalizes it to raw.githubusercontent.com and serves it as a
+        # playable variant — no upload/transcode needed (pre-M2 content path).
+        gh_asset, _ = MediaAsset.objects.get_or_create(
+            source_url="https://github.com/dervaish/media/blob/main/tanam-farsooda/qawwali.mp3",
+            defaults={
+                "kind": MediaKind.AUDIO,
+                "mime_type": "audio/mpeg",
+                "duration_ms": 240000,
+                "processing_status": ProcessingStatus.READY,
+                "source_name": "github:dervaish/media",
+            },
+        )
+        gh_rendition, _ = Rendition.objects.get_or_create(
+            slug="tanam-farsooda-github-rendition",
+            defaults={
+                "kalam": kalam, "title": "Tanam Farsooda — GitHub-hosted Rendition",
+                "duration_ms": 240000, "year": 2023, "published_at": timezone.now(),
+                **PUBLIC,
+            },
+        )
+        gh_rendition.media_assets.add(gh_asset)
+        Credit.objects.get_or_create(
+            rendition=gh_rendition, person=reciter, role=PersonRole.RECITER
+        )
+
+        self.stdout.write(self.style.SUCCESS(
+            "Seeded demo kalam, rendition, media, archive record, source + mirrors."
+        ))

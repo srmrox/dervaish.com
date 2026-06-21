@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "lyrics",
     "archive",
     "community",
+    "federation",
 ]
 
 MIDDLEWARE = [

@@ -8,12 +8,16 @@ from catalog.views import (
     PersonViewSet,
     RenditionViewSet,
 )
+from federation.views import MirrorDirectoryViewSet, SourceDirectoryViewSet
 
 router = DefaultRouter()
 router.register("kalams", KalamViewSet, basename="kalam")
 router.register("renditions", RenditionViewSet, basename="rendition")
 router.register("people", PersonViewSet, basename="person")
 router.register("collections", CollectionViewSet, basename="collection")
+# Federation: official directory of content sources ("databases") and media mirrors
+router.register("directory/sources", SourceDirectoryViewSet, basename="source")
+router.register("directory/mirrors", MirrorDirectoryViewSet, basename="mirror")
 
 urlpatterns = [
     path("v1/", include((router.urls, "v1"))),
