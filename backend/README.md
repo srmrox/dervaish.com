@@ -36,6 +36,17 @@ Accounts & user-scoped (token auth — send `Authorization: Token <key>`):
 - `GET/POST /api/v1/me/queues/`, `POST /api/v1/me/queues/{id}/items/`,
   `DELETE /api/v1/me/queues/{id}/items/{item_id}/`, `POST /api/v1/me/queues/{id}/reorder/`
 
+Media pipeline (contributor uploads, editor visibility):
+- `POST /api/v1/media/upload-sessions/` → pending asset + upload target
+  (presigned S3/R2 PUT in prod, or `POST …/assets/{id}/upload/` server-mediated in dev)
+- `POST /api/v1/media/assets/{id}/complete/` → enqueue transcoding (Celery)
+- `GET /api/v1/media/assets/[{id}/]` → asset + variants + processing status (editor+)
+
+The worker (`media/tasks.py`) probes with ffprobe, transcodes per `media/transcode.py`
+profiles (audio → opus+aac, video → mp4 720p + poster), uploads variants, and records
+`MediaRendition` rows; the rendition playback manifest then serves them via the mirror
+resolver. Run the worker with `celery -A config worker` (or the Docker `worker` role).
+
 ## Develop
 ```bash
 pip install -r requirements-dev.txt   # adds ruff

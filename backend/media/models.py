@@ -37,6 +37,9 @@ class MediaAsset(TimestampedModel):
     processing_status = models.CharField(
         max_length=12, choices=ProcessingStatus.choices, default=ProcessingStatus.PENDING
     )
+    processing_error = models.CharField(max_length=300, blank=True)
+    processing_log = models.TextField(blank=True)
+    processing_attempts = models.PositiveIntegerField(default=0)
     # Provenance
     source_name = models.CharField(max_length=200, blank=True)
     original_filename = models.CharField(max_length=300, blank=True)

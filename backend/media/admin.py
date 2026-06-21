@@ -15,9 +15,10 @@ class CaptionInline(admin.TabularInline):
 
 @admin.register(MediaAsset)
 class MediaAssetAdmin(admin.ModelAdmin):
-    list_display = ("id", "kind", "processing_status", "duration_ms", "mime_type")
+    list_display = ("id", "kind", "processing_status", "processing_attempts", "duration_ms", "mime_type")
     list_filter = ("kind", "processing_status")
     search_fields = ("storage_key", "source_url", "original_filename")
+    readonly_fields = ("processing_status", "processing_error", "processing_log", "processing_attempts")
     inlines = [MediaRenditionInline, CaptionInline]
 
 

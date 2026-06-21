@@ -6,5 +6,6 @@ db.sqlite3*
 .venv/
 venv/
 staticfiles/
+mediafiles/
 .pytest_cache/
 .DS_Store

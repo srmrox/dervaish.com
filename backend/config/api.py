@@ -18,6 +18,7 @@ from catalog.views import (
     SearchView,
 )
 from federation.views import MirrorDirectoryViewSet, SourceDirectoryViewSet
+from media.views import MediaAssetViewSet, UploadSessionView
 
 router = DefaultRouter()
 router.register("kalams", KalamViewSet, basename="kalam")
@@ -27,19 +28,22 @@ router.register("collections", CollectionViewSet, basename="collection")
 # Federation: official directory of content sources ("databases") and media mirrors
 router.register("directory/sources", SourceDirectoryViewSet, basename="source")
 router.register("directory/mirrors", MirrorDirectoryViewSet, basename="mirror")
+# Media pipeline (upload/transcode); list/detail are editor-gated
+router.register("media/assets", MediaAssetViewSet, basename="media-asset")
 # User-facing, owner-scoped
 router.register("me/library", LibraryViewSet, basename="library")
 router.register("me/queues", QueueViewSet, basename="queue")
 
-auth_urls = [
+extra_urls = [
     path("auth/register/", RegisterView.as_view(), name="register"),
     path("auth/login/", LoginView.as_view(), name="login"),
     path("auth/logout/", LogoutView.as_view(), name="logout"),
     path("me/", MeView.as_view(), name="me"),
     path("me/preferences/", PreferencesView.as_view(), name="me-preferences"),
     path("search/", SearchView.as_view(), name="search"),
+    path("media/upload-sessions/", UploadSessionView.as_view(), name="upload-session"),
 ]
 
 urlpatterns = [
-    path("v1/", include((auth_urls + router.urls, "v1"))),
+    path("v1/", include((extra_urls + router.urls, "v1"))),
 ]

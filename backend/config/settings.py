@@ -125,6 +125,10 @@ USE_TZ = True
 # --- Static / media ---------------------------------------------------------
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# Local filesystem media root for the dev/server-mediated upload path (no S3).
+# In production USE_S3=true routes default storage to R2 instead.
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "mediafiles"
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
