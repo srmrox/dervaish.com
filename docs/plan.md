@@ -1,659 +1,468 @@
-# Dervaish Greenfield Refactor Plan
+# Dervaish Platform & Studio Plan
+
+_Last updated: 2026-07-04. Single authoritative plan for the Dervaish platform.
+Merges the greenfield architecture, the Studio contribution/render/distribution
+plan, and the storage + Markdown-wiki content model. Where sources disagreed, the
+most recent decisions win. Companion: `design-system.md` (UI contract) and the
+renderer-side notes in `Lyrics Video/docs/` (`HANDOFF.md`, `UPGRADE.md`)._
+
+## 1. Overview and scope
+
+Dervaish is a preservation-focused devotional media archive and listening
+platform. It combines audio/video hosting and playback, archival metadata and
+provenance, reciter/writer profiles, multilingual synchronized lyrics
+(translation + transliteration, RTL/LTR), a wiki-style reading layer, community
+submission and correction workflows, and lyric-video generation.
+
+Dervaish **Studio** is the contribution layer: the public submits sources,
+transcribes and times lyrics, adds translations, and writes wiki context; admins
+verify and merge; finalized content is (a) published as readable Markdown files
+for preservation and (b) rendered into lyric videos on local GPU hardware. Some
+videos embed a source video behind the lyrics.
+
+## 2. Executive recommendation (greenfield)
+
+Dervaish is a greenfield, Dervaish-first platform rather than a direct integration
+of MediaCMS or Omeka S. Those carry different assumptions (general media
+publishing; a PHP/Zend-era heritage CMS). Dervaish needs a narrower, deeper
+product where devotional listening, provenance, multilingual synchronized lyrics,
+correction workflows, and generated lyric-video publishing are first-class models.
+MediaCMS and Omeka S are references only (architecture and data-model lessons);
+their code is not merged in, avoiding incoherence, stack mixing, and AGPL/GPL
+license risk.
+
+## 3. Current state and remaining gaps
+
+Backend implemented and tested: Django + DRF + Celery + PostgreSQL + Redis +
+S3-compatible storage. Apps: `accounts`, `catalog`, `archive`, `lyrics`,
+`community`, `media`, `video_generation`, `imports`, `public`, `audit`,
+`dervaish_admin`. The React frontend (`apps/platform-web`) is an early shell.
+
+Gaps between here and a working pipeline:
+
+1. **Rendering is a placeholder** (`video_generation` calls
+   `complete_render_placeholder`); the local renderer must consume the real
+   payload.
+2. **Studio / Player / Wiki UI is unbuilt** (frontend shell only).
+3. **Video-overlay rendering** — `video_overlay` is modeled but the local renderer
+   composites only image + audio today.
+4. **Kalam/Rendition split and Markdown publishing** — the data model must gain a
+   work-vs-recording distinction (§8, §11) and an approval-time file publisher
+   (§4). The current `Track`/`LyricSet` shape predates this.
+
+## 4. Storage and content architecture
+
+Three stores, split by data type; each is the right tool for its job:
+
+- **Media blobs → Cloudflare R2.** Audio, source video, images, and generated MP4s
+  live in R2 (S3-compatible, so the existing S3 code path is unchanged). At
+  hundreds of GB with video, R2's zero egress is decisive for streaming. Renders
+  are produced locally on the 5090, kept in OneDrive, and uploaded to R2.
+- **Text / metadata / lyrics / wiki → a Git repo of Markdown.** People, kalam
+  text, kalam context/story, per-line annotations, and rendition metadata are
+  **published as readable Markdown/structured files** for preservation, openness,
+  and portability. This is the open, versioned, human-readable backup.
+- **Working store → PostgreSQL.** The database is where live work happens —
+  in-progress submissions, redundant timing passes, review states, votes — and it
+  is retained permanently as the transactional store and fast index. It is **not**
+  discarded after publishing.
+
+Cold backup: **OneDrive / SharePoint**, manually managed for now, until an
+automated mirror/replication job exists. Provenance already stores checksums, so a
+later mirror can verify copies.
+
+**Publish-on-approval.** Contributors and admins work entirely in the database via
+Studio. Only when content is **approved/canonical** does the platform generate the
+Markdown/structured files into the content repo and commit them. Editing stays in
+the DB (good UX, review workflow, millisecond timing); the files are the readable,
+preserved output. Post-publication corrections flow through the same review path
+and re-publish. Net roles: **R2 = blobs, Git/Markdown = published canonical text +
+wiki, Postgres = working + index.**
+
+Content repo layout:
 
-## 1. Executive recommendation
-
-Dervaish should be rebuilt as a greenfield, Dervaish-first platform rather than directly integrating MediaCMS and Omeka S.
-
-The direct-integration path would inherit two large products with different assumptions: MediaCMS is a general media-publishing system, and Omeka S is a cultural-heritage CMS with PHP/Zend-era architecture. Dervaish needs a narrower but deeper product: devotional listening, provenance, multilingual synchronized lyrics, correction workflows, and generated lyric-video publishing. A greenfield build lets those concerns become first-class models instead of plugins or sidecar tables.
-
-Use MediaCMS and Omeka S as reference implementations only. Preserve their useful architectural concepts, workflow patterns, and data-model lessons, but do not mechanically merge repositories or copy large implementation blocks. This avoids product incoherence, unnecessary stack mixing, and license risk.
-
-Greenfield is the better choice under these conditions:
-
-- Dervaish remains a focused preservation and listening platform, not a generic CMS.
-- The team accepts a phased rebuild rather than a one-shot migration.
-- MediaCMS and Omeka S are treated as research references, not vendored foundations.
-- The first production version can launch with minimal fresh seed fixtures and later add importers.
-
-A direct MediaCMS or Omeka S integration would only be preferable if Dervaish needed to ship immediately on top of an existing deployed instance, or if the primary product requirement became generic media hosting or generic cultural-heritage site building rather than devotional media preservation.
-
-## 2. Source repository assessment
-
-### Dervaish
-
-Useful concepts to preserve:
-
-- Collections, people, reciter/writer credits, queues, track upvotes, track requests, submission verification, correction drafts, lyric language direction, media mirrors, offline packages, and video generation jobs.
-- Shared domain vocabulary around `Track`, `Collection`, `Person`, `LyricSet`, `LyricLanguage`, `LyricSegment`, `Submission`, and `VideoGenerationJob`.
-- The design-system direction: calm dark UI, listening-first workflows, visible trust signals, dense operational screens, and RTL/LTR lyric support.
-
-Useful code patterns to study:
-
-- Current Fastify endpoints as a rough API inventory.
-- Zod schemas as early validation intent.
-- Playback helpers for active lyric segment detection and language direction handling.
-- Python video worker payload shape and its support for multiple visible lyric languages.
-
-Parts not worth copying:
-
-- Demo-data-first storage, in-memory fallbacks, and partial PostgreSQL persistence.
-- Header-based role simulation.
-- Single large React app component with many workflow branches.
-- Prototype API contracts that expose whole catalog snapshots where paginated resources are needed.
-
-Licensing considerations:
-
-- The current Dervaish code can be reused if it is owned by the project, but the rebuild should still avoid carrying over prototype constraints.
-
-Architectural risks:
-
-- The existing TypeScript prototype already mixes production concepts with demo shortcuts.
-- Keeping it as the foundation would require replacing most persistence, auth, background jobs, uploads, and admin workflows anyway.
-- Shared package types are useful for vocabulary, but not sufficient as production domain boundaries.
-
-### MediaCMS
-
-Useful concepts to preserve:
-
-- Upload lifecycle, media-file state transitions, encoding profiles, renditions, thumbnails, subtitles, chapters, permissions, publishing states, and background-task orchestration.
-- Separation between original uploaded media, derived encodings, and player-facing URLs.
-- Operational patterns for FFmpeg processing, retryable Celery jobs, and admin visibility into media status.
-
-Useful code patterns to study:
-
-- Celery task decomposition for chunking, encoding, cleanup, and notification.
-- Media metadata extraction before processing.
-- Encoding profiles and resolution-aware rendition selection.
-- User and RBAC patterns for media actions.
-
-Parts not worth copying:
-
-- Generic video-platform product surface.
-- Broad social/media features unrelated to devotional archival workflows.
-- Large Django app layout as-is.
-- Any implementation copied directly from AGPL-licensed files.
-
-Licensing considerations:
-
-- MediaCMS is AGPL-3.0. Do not copy implementation code unless Dervaish intentionally accepts AGPL obligations for the resulting network service.
-- Safe use: read for architecture and behavior, then write new implementation from Dervaish requirements.
-
-Architectural risks:
-
-- MediaCMS optimizes for general media hosting, not source-critical archival metadata or multilingual lyrics.
-- Its processing pipeline is valuable, but its product model would need heavy adaptation.
-
-### Omeka S
-
-Useful concepts to preserve:
-
-- Item and item-set concepts, resource/value metadata model, vocabularies, resource classes, linked resources, public site/exhibit structure, JSON-LD output, and admin metadata workflows.
-- Distinction between structured archival values, display resources, and public publication contexts.
-
-Useful code patterns to study:
-
-- Resource/value API representations.
-- Vocabulary and property modeling.
-- Item-set grouping.
-- Public site pages for archive browsing.
-- JSON-LD-style export and linked-data thinking.
-
-Parts not worth copying:
-
-- PHP framework architecture.
-- Generic module system and theme system.
-- Full Omeka admin UI model.
-- Generic cultural-heritage abstractions where Dervaish needs devotional media-specific fields.
-
-Licensing considerations:
-
-- Omeka S is GPL-3.0. Do not copy implementation code into a non-GPL project.
-- Use as conceptual reference for metadata modeling and public archive publishing.
-
-Architectural risks:
-
-- Omeka-like metadata can become too abstract for editors if every field is modeled as a generic value.
-- Dervaish should support vocabularies and JSON-LD without making routine catalog editing feel like ontology management.
-
-## 3. Target stack recommendation
-
-Use one coherent production stack:
-
-- Backend: Django, Django REST Framework, PostgreSQL, Celery, Redis, S3-compatible object storage, FFmpeg, and Django admin.
-- Frontend: React with Vite or Next.js, using a Dervaish-specific component system guided by `docs/design-system.md`.
-- Worker: Celery tasks for ingestion, transcoding, waveform generation, thumbnailing, caption processing, import jobs, and lyric-video rendering.
-- Storage: S3-compatible buckets for originals, renditions, captions, thumbnails, waveform data, generated videos, and import packages.
-- Search: PostgreSQL full-text search for v1, with a later OpenSearch/Meilisearch option if catalog scale requires it.
-
-Django/DRF/Celery is recommended over the current TypeScript/Fastify approach because Dervaish's hardest production problems are media ingestion, durable workflow state, admin/editor operations, background processing, and data integrity. Django gives mature ORM modeling, migrations, permissions, admin workflows, and Celery integration. MediaCMS also demonstrates that Django/Celery is a proven shape for FFmpeg-backed media pipelines.
-
-The existing TypeScript/Fastify stack is useful as a prototype and API sketch, but hardening it would require building or selecting equivalents for many things Django already provides: admin, permissions, durable workflow modeling, object-level review states, background-job conventions, and migration discipline.
-
-Do not mix PHP and Python in the production application. Omeka S should inform archive modeling; it should not become a runtime dependency.
-
-## 4. Target module architecture
-
-Create the backend as a Django project with focused apps:
-
-- `accounts`: users, roles, permissions, contributor trust, API tokens, anonymous session policy, and audit identity.
-- `media`: uploads, assets, renditions, storage libraries, mirrors, captions, chapters, thumbnails, waveforms, previews, and playback URL signing.
-- `catalog`: tracks, collections, people, credits, visibility, publication states, queue-facing catalog APIs, and search indexing.
-- `archive`: archive records, citations, provenance records, source ratings, vocabulary terms, resource classes, item-set-like grouping, and JSON-LD export.
-- `lyrics`: lyric sets, languages, synchronized segments, imports, exports, editor drafts, validation, and direction-aware rendering metadata.
-- `community`: submissions, correction drafts, verification votes, disputes, track requests, upvotes, contributor notes, and moderation workflow.
-- `video_generation`: lyric-video job definitions, render layouts, source selection, worker payloads, job logs, previews, output assets, cancellation, and publishing.
-- `public`: public API serializers, public archive/listening pages, SEO metadata, share links, and public JSON/JSON-LD endpoints.
-- `admin`: Django admin customizations, review queues, operational dashboards, moderation actions, and preservation controls.
-
-The React web app should be organized by product workflows rather than backend app names:
-
-- Listen
-- Companion
-- Archive
-- Submit
-- Community
-- Admin & Preservation
-
-## 5. Canonical data model
-
-Core account entities:
-
-- `User`: authenticated account with display name, email, active status, role, trust score, and timestamps.
-- `Role`: normalized role or permission group for anonymous, listener, contributor, editor, and admin capabilities.
-
-Catalog entities:
-
-- `Person`: devotional contributor profile with names, aliases, biography, origin, external identifiers, and archival links.
-- `Track`: canonical devotional work or recording entry with title, slug, duration, primary language, visibility, publication state, and archive links.
-- `Collection`: curated or user-owned grouping of tracks with visibility, owner, artwork, ordering, and optional share token.
-- `TrackCredit`: typed relationship between a track and person, such as reciter, writer, translator, source contributor, or editor.
-
-Media entities:
-
-- `MediaAsset`: original uploaded or imported media object with kind, storage key, checksum, MIME type, size, duration, source URL, and provenance.
-- `MediaRendition`: derived playable asset with format, bitrate, resolution, codec, storage key, processing status, and relationship to the master asset.
-- `Caption`: caption/subtitle file linked to an asset or track with language, format, source, status, and storage key.
-- `Chapter`: timed section marker for a track or media asset with start/end time, title, language, and optional notes.
-
-Archive entities:
-
-- `ArchiveRecord`: source-critical record linked to tracks, people, and collections with summary, visibility, editorial notes, and publication state.
-- `Citation`: bibliographic, web, manuscript, interview, or field-recording reference with URL, date, author, and note.
-- `ProvenanceRecord`: import, custody, checksum, source, acquisition, and transformation event for archive and media objects.
-- `SourceRating`: editorial or community assessment of source quality with score, rationale, contributor, and timestamp.
-- `VocabularyTerm`: controlled vocabulary term for resource classes, properties, genres, places, languages, source types, and devotional categories.
-
-Lyrics entities:
-
-- `LyricSet`: canonical or draft lyric document linked to a track, submission, or correction draft.
-- `LyricLanguage`: language lane within a lyric set with code, label, role, direction, publication status, and display order.
-- `LyricSegment`: timed segment with start/end milliseconds and per-language text values.
-
-Community entities:
-
-- `Submission`: contributor-submitted track, media, source, lyric, or metadata proposal with draft and review states.
-- `CorrectionDraft`: proposed correction against an existing published track, lyric set, archive record, credit, citation, or media asset.
-- `VerificationVote`: field-level verification or dispute vote with note, voter, target field, and replacement behavior per voter/field.
-- `TrackRequest`: request for missing or improved material with optional target track, reciter/writer names, source hints, and status.
-- `TrackRequestVote`: one user upvote per request.
-
-Video generation entities:
-
-- `VideoGenerationJob`: render request with source asset, source mode, layout, resolution, visible lyric languages, status, logs, preview, output asset, and failure reason.
-
-All public models should include timestamps. Reviewable models should include created-by, updated-by, reviewed-by, state, and audit-log coverage.
-
-## 6. Media pipeline design
-
-Upload flow:
-
-- Contributor, editor, or admin requests an upload session.
-- API creates a `MediaAsset` in pending state and returns a direct S3 upload target or server-mediated upload endpoint.
-- Client uploads the original file.
-- Worker verifies checksum, MIME type, duration, codecs, size, and media kind.
-- Worker updates asset metadata and queues derived processing.
-
-Storage model:
-
-- Originals are immutable and stored separately from derived renditions.
-- Renditions are replaceable and linked back to the master asset.
-- Captions, chapters, thumbnails, waveforms, and generated video outputs are separate storage objects.
-- Storage keys should include environment, object type, object id, and version.
-
-Transcoding:
-
-- Audio: generate normalized playback formats such as Opus and AAC/MP3, preserving original lossless masters when available.
-- Video: generate web MP4 and adaptive HLS renditions as needed.
-- Images: generate thumbnails and responsive sizes.
-- Every processing step writes durable status, logs, retry count, and failure reason.
-
-Thumbnailing and waveform generation:
-
-- Audio tracks get waveform JSON or binary peaks and optional cover/visual preview.
-- Videos get poster frames and timeline thumbnails.
-- Generated lyric videos get preview frames before publication.
-
-Captions and chapters:
-
-- Accept WebVTT as the preferred interchange format for v1.
-- Store captions as normalized database metadata plus the original uploaded file.
-- Chapters are first-class timed records and can be exported to WebVTT chapters.
-
-Playback URLs:
-
-- Public assets use cacheable URLs where allowed.
-- Private or pending assets use signed URLs.
-- API returns a playback manifest with preferred rendition, fallback mirrors, captions, chapters, and lyric-set metadata.
-
-Generated media publishing:
-
-- Video jobs create preview assets first.
-- Editors approve generated outputs before they become public track media.
-- Generated media retains provenance linking job settings, source asset, lyric set version, layout, and output checksum.
-
-## 7. Archive metadata design
-
-Dervaish should implement Omeka-like archival depth without exposing a generic Omeka clone.
-
-Archive records:
-
-- Archive records are Dervaish-specific resources that can link to tracks, people, collections, media assets, citations, and provenance events.
-- They should support visibility states: draft, pending review, public, unlisted, and archived.
-- Public pages show summary, source quality, citations, provenance, linked tracks, linked people, and export links.
-
-Vocabularies and values:
-
-- Use `VocabularyTerm` for controlled lists and linked-data terms.
-- Keep common devotional/catalog fields as explicit columns for editor usability.
-- Use flexible metadata values only for extended archival properties that vary by source or tradition.
-
-Item sets:
-
-- Model item-set-like grouping through collections and archive groupings rather than importing Omeka's full site-builder abstraction.
-- Public archive pages can expose curated record groups, people pages, and collection context.
-
-Citations and provenance:
-
-- Citations must be reusable and linkable.
-- Provenance records should capture source name, source URL, acquisition date, checksum, imported-by user, transformation event, and notes.
-- Source ratings should distinguish editorial ratings from community trust signals.
-
-JSON-LD export:
-
-- Provide JSON-LD for public tracks, people, archive records, collections, citations, and media assets.
-- Map Dervaish terms to common vocabularies where practical, while preserving Dervaish-specific terms under a project namespace.
-
-## 8. Lyrics design
-
-Lyric sets:
-
-- A track can have one published canonical lyric set and multiple draft or historical lyric sets.
-- A submission or correction draft can own a draft lyric set before publication.
-- Lyric sets are versioned so corrections and generated videos can reference the exact text used.
-
-Languages:
-
-- Each lyric language has `code`, `name`, `role`, `direction`, `display_order`, and `is_published`.
-- Roles include original, translation, transliteration, commentary, and phonetic helper if needed later.
-- Direction is authoritative for UI rendering, export, and video overlays.
-
-Segments:
-
-- Segments store start/end milliseconds and text per language.
-- Segments must not overlap within a lyric set.
-- Missing text in one language should be allowed so translations can be incomplete without blocking original lyrics.
-
-Import and export:
-
-- Import WebVTT, LRC, TTML, and JSON.
-- Export WebVTT, LRC, TTML, and Dervaish JSON.
-- WebVTT is the preferred v1 editor and interoperability format.
-
-Editor workflow:
-
-- Contributors can draft lyrics during submission.
-- Editors can align timings, add languages, mark language lanes public, request changes, and publish.
-- Correction drafts can target specific segments or language lanes.
-- UI must set `dir` and `lang` per lyric lane and use mixed-direction-safe rendering.
-
-Playback:
-
-- API returns active lyric metadata with the playback manifest.
-- Client detects the active segment locally from current position.
-- Users can choose visible language lanes, with preferences saved for signed-in users.
-
-## 9. Community workflow design
-
-Submissions:
-
-- Contributors create draft submissions for new tracks, missing media, lyrics, translations, source information, or archive notes.
-- Drafts can include media attachments, citations, lyric sets, people hints, and notes.
-- Submission states: draft, submitted, under review, changes requested, approved, rejected, published.
-
-Corrections:
-
-- Correction drafts target published records and specify fields being corrected.
-- Editors can apply accepted corrections partially or fully.
-- Rejected corrections remain auditable.
-
-Verification and disputes:
-
-- Community members can verify or dispute field-level claims on visible submissions.
-- One vote per user, target, and field; later votes replace earlier votes.
-- Verification summaries show counts and dispute state without automatically publishing changes.
-
-Track requests:
-
-- Users can request missing tracks or improvements to existing tracks.
-- Requests support upvotes, status, source hints, reciter/writer names, and moderator notes.
-- Editors can mark requests open, planned, fulfilled, duplicate, or rejected.
-
-Contributor trust:
-
-- Trust score grows from accepted submissions, useful verification, and low dispute rate.
-- Trust can influence queue ordering but should not bypass editor review in v1.
-
-Audit log:
-
-- Every moderation, publication, correction, media state change, and role-sensitive action creates an audit entry.
-- Audit entries should include actor, target, action, before/after summary, timestamp, and request metadata.
-
-## 10. API design
-
-Use REST APIs with DRF serializers and pagination. Public endpoints must avoid leaking draft or private data.
-
-Accounts:
-
-- `POST /api/auth/session/`
-- `GET /api/me/`
-- `PATCH /api/me/preferences/`
-- `GET /api/me/queues/`
-- `POST /api/me/queues/`
-- `POST /api/me/queues/{id}/items/`
-- `PATCH /api/me/queues/{id}/items/reorder/`
-- `DELETE /api/me/queues/{id}/items/{item_id}/`
-
-Catalog and playback:
-
-- `GET /api/catalog/search/`
-- `GET /api/catalog/tracks/`
-- `GET /api/catalog/tracks/{id}/`
-- `POST /api/catalog/tracks/{id}/upvote/`
-- `GET /api/catalog/tracks/{id}/playback/`
-- `GET /api/catalog/collections/`
-- `GET /api/catalog/collections/{id}/`
-- `POST /api/catalog/collections/{id}/share-token/`
-- `GET /api/catalog/people/`
-- `GET /api/catalog/people/{id}/`
-
-Archive:
-
-- `GET /api/archive/records/`
-- `GET /api/archive/records/{id}/`
-- `GET /api/archive/records/{id}.jsonld`
-- `GET /api/archive/citations/`
-- `GET /api/archive/vocabularies/`
-- `GET /api/archive/provenance/{id}/`
-
-Lyrics:
-
-- `GET /api/tracks/{id}/lyrics/`
-- `POST /api/submissions/{id}/lyrics/languages/`
-- `PUT /api/submissions/{id}/lyrics/segments/`
-- `POST /api/lyrics/import/`
-- `GET /api/lyrics/{id}/export/`
-
-Submissions and community:
-
-- `POST /api/submissions/`
-- `GET /api/submissions/{id}/`
-- `PATCH /api/submissions/{id}/`
-- `POST /api/submissions/{id}/submit/`
-- `POST /api/submissions/{id}/media/`
-- `POST /api/submissions/{id}/corrections/`
-- `GET /api/community/submissions/`
-- `POST /api/community/submissions/{id}/verifications/`
-- `GET /api/community/track-requests/`
-- `POST /api/community/track-requests/`
-- `POST /api/community/track-requests/{id}/upvote/`
-
-Admin and preservation:
-
-- `GET /api/admin/review/submissions/`
-- `PATCH /api/admin/review/submissions/{id}/`
-- `POST /api/admin/review/submissions/{id}/publish/`
-- `GET /api/admin/media/assets/`
-- `POST /api/admin/media/assets/{id}/process/`
-- `GET /api/admin/media/renditions/`
-- `GET /api/admin/media/mirrors/`
-- `POST /api/admin/media/mirrors/`
-- `GET /api/admin/audit-log/`
-
-Video generation:
-
-- `POST /api/video-generation/jobs/`
-- `GET /api/video-generation/jobs/`
-- `GET /api/video-generation/jobs/{id}/`
-- `POST /api/video-generation/jobs/{id}/cancel/`
-- `POST /api/video-generation/jobs/{id}/publish/`
-
-## 11. Frontend design
-
-Use the Dervaish design system as the binding UI contract.
-
-Application shell:
-
-- Desktop uses persistent side navigation, main workflow surface, optional right rail, and sticky playback bar.
-- Mobile uses top app bar, bottom navigation, single-column flow, and sticky media controls.
-- Primary workflows: Listen, Companion, Submit, Community, Admin.
-
-Listen:
-
-- Browse tracks, collections, people, and curated archive groups.
-- Keep playback controls visible.
-- Show reciter, writer, source quality, media state, upvote count, and collection context without hiding listening actions.
-
-Companion:
-
-- Center synchronized lyrics with language lane controls.
-- Show archive context, credits, citations, and correction entry points near the active track.
-- Use `dir`, `lang`, and mixed-direction-safe CSS per language lane.
-
-Archive:
-
-- Person pages show credited tracks, related archive records, citations, provenance, and source ratings.
-- Archive record pages show structured metadata, linked tracks, citations, provenance timeline, JSON-LD export, and editorial notes where public.
-
-Submit:
-
-- Guided draft workflow with field groups for identity, source, media, lyrics, citations, and notes.
-- Preserve draft state after validation failures.
-- Make review status visible and recoverable.
-
-Community:
-
-- Track request queue with upvotes and status filters.
-- Submission verification queue with field-level verify/dispute actions.
-- Contributor-facing history and pending actions.
-
-Admin & Preservation:
-
-- Review queues for submissions, corrections, media processing, disputes, and video generation.
-- Detail drawers preserve list context.
-- Tables show status chips, source quality, media state, job state, and actionable controls.
-
-Visual constraints:
-
-- Use semantic tokens from `docs/design-system.md`.
-- Keep cards for repeated objects, not nested page sections.
-- Use lucide icons for repeated controls.
-- Every icon-only button needs `aria-label` and `title`.
-- Do not rely on color alone for status.
-
-## 12. Migration/import strategy
-
-Initial v1 data strategy:
-
-- Start fresh with minimal seed fixtures.
-- Seeds should include one public track, one person, one collection, one archive record, one citation, one lyric set with RTL and LTR lanes, and one media asset placeholder.
-- Current Dervaish demo data may inform examples but is not mandatory to preserve.
-
-Existing Dervaish prototype:
-
-- Use current domain types and API routes as a behavior inventory.
-- Do not migrate prototype storage tables directly.
-- Later importer can map current demo JSON-like structures into Django models if needed.
-
-MediaCMS imports:
-
-- Build an optional importer only after the core media model is stable.
-- Map MediaCMS media objects to `MediaAsset`, encodings to `MediaRendition`, subtitles to `Caption`, categories/tags to vocabulary terms, and user ownership to provenance/import metadata.
-- Imported files should be copied into Dervaish-controlled object storage, not hot-linked as the canonical master.
-
-Omeka S imports:
-
-- Build an optional importer for items, item sets, media, values, vocabularies, and resource classes.
-- Map items to archive records or catalog records depending on resource type.
-- Map item sets to archive groupings or collections.
-- Preserve original Omeka IDs in provenance records and external identifiers.
-
-Import safety:
-
-- Every import run creates an import batch record.
-- Imports should be dry-runnable, resumable, and reversible where practical.
-- Imported records enter draft or pending-review state unless explicitly trusted.
-
-## 13. Phased build roadmap
-
-Phase 1: project skeleton and core models
-
-- Scaffold Django project, DRF, Celery, Redis, PostgreSQL, S3 settings, React app, and shared local dev compose services.
-- Implement accounts, roles, audit logging, base model mixins, and minimal seed fixtures.
-- Add core catalog, archive, lyrics, media, and community models.
-
-Phase 2: media upload and playback pipeline
-
-- Implement upload sessions, object storage integration, checksum verification, asset metadata extraction, basic audio renditions, thumbnails, and playback manifest endpoint.
-- Add Celery task state and admin visibility for processing jobs.
-
-Phase 3: catalog/archive models and admin
-
-- Implement track, collection, person, credits, archive records, citations, provenance, source ratings, vocabulary terms, and Django admin workflows.
-- Add public list/detail APIs and JSON-LD export for archive records.
-
-Phase 4: lyrics model and player overlay
-
-- Implement lyric sets, languages, segments, import/export, editor APIs, saved language preferences, and active-segment client behavior.
-- Build direction-aware companion lyric view.
-
-Phase 5: community submissions and verification
-
-- Implement submissions, correction drafts, track requests, upvotes, verification votes, review states, trust scoring, and audit coverage.
-- Build contributor and editor review UI.
-
-Phase 6: video generation worker
-
-- Port the current worker concept into Celery-managed jobs.
-- Implement render payload generation, job logs, preview frames, output assets, cancellation, and publishing approval.
-
-Phase 7: public archive/listening UI
-
-- Build production React workflows for Listen, Companion, Archive, Submit, Community, and Admin.
-- Add responsive navigation, sticky playback bar, accessible controls, and dense admin tables.
-
-Phase 8: import/export and polish
-
-- Add optional Dervaish prototype, MediaCMS, and Omeka S importers.
-- Add export endpoints, search improvements, performance tuning, monitoring, and production hardening.
-
-## 14. Validation plan
-
-Backend tests:
-
-- Model tests for required fields, visibility states, unique constraints, segment timing, votes, and publication rules.
-- API tests for permissions, pagination, serialization, signed playback URLs, public/private visibility, review actions, and validation errors.
-- Celery tests for media processing state transitions, retry behavior, failed jobs, cancellation, and generated output publishing.
-
-Media tests:
-
-- Fixture media files for audio, video, captions, bad MIME types, checksum mismatch, and unsupported codecs.
-- Verify originals remain immutable and renditions link to their master asset.
-- Verify waveform, thumbnail, caption, and playback manifest generation.
-
-Lyrics tests:
-
-- Import/export WebVTT, LRC, TTML, and JSON.
-- Verify RTL/LTR metadata, active segment detection, incomplete translations, and non-overlapping segment validation.
-
-Community tests:
-
-- Submission lifecycle from draft to published.
-- Correction draft partial acceptance.
-- Verification vote replacement.
-- Track request upvote uniqueness and status changes.
-- Contributor trust score changes.
-
-Frontend tests:
-
-- Component tests for playback bar, lyric lanes, status chips, review cards, forms, and tables.
-- End-to-end tests for listening, lyric companion, submission draft, verification, track request upvote, and admin publish flow.
-- Accessibility checks for keyboard navigation, focus visible states, icon labels, and direction-aware lyric rendering.
-
-Seed data:
-
-- Keep minimal deterministic fixtures for one complete public track and one review workflow.
-- Do not rely on large imported demo data for tests.
-
-## 15. Risks and mitigations
-
-Engineering complexity:
-
-- Risk: media processing, archive metadata, lyrics, community, and admin workflows are too broad for one release.
-- Mitigation: follow the phased roadmap and ship vertical slices with real persistence and review states.
-
-License obligations:
-
-- Risk: copying MediaCMS AGPL-3.0 or Omeka S GPL-3.0 code could impose unwanted obligations.
-- Mitigation: use both repositories only as references unless the project explicitly accepts their license terms.
-
-Media processing cost:
-
-- Risk: transcoding and generated videos can consume significant CPU, storage, and queue time.
-- Mitigation: use explicit encoding profiles, quotas, job priorities, retry limits, and editor approval before expensive generation.
-
-Metadata complexity:
-
-- Risk: Omeka-style generic values can overwhelm editors and make common workflows slow.
-- Mitigation: use explicit Dervaish models for common fields and flexible vocabulary/value metadata only where it adds archival value.
-
-Search:
-
-- Risk: simple database search may be insufficient for multilingual text and archive discovery.
-- Mitigation: start with PostgreSQL full-text and trigram search, then add a dedicated search service when data volume justifies it.
-
-Performance:
-
-- Risk: large catalog snapshots and nested archive serializers can become slow.
-- Mitigation: use paginated APIs, selected prefetching, read-optimized serializers, CDN-backed media, and cache public archive pages.
-
-Long-term maintainability:
-
-- Risk: custom workflows become hard to reason about as roles and states grow.
-- Mitigation: keep state machines explicit, centralize permissions, add audit logs early, and keep modules aligned with product workflows.
-
-Frontend density:
-
-- Risk: preservation metadata can make the interface cluttered.
-- Mitigation: follow `docs/design-system.md`: progressive disclosure, stable panels, status chips with text, compact controls, and listening-first hierarchy.
-
-## Files changed
-
-- Created `docs/dervaish-greenfield-refactor-plan.md`.
-
-## Recommended next implementation prompt
-
-Use this next:
-
-```text
-Using docs/dervaish-greenfield-refactor-plan.md and docs/design-system.md, scaffold Phase 1 of the Django/DRF/Celery/PostgreSQL/S3 + React greenfield Dervaish platform. Do not copy implementation code from MediaCMS or Omeka S. Create the project skeleton, core Django apps, base models, minimal seed fixtures, and initial tests for accounts, catalog, archive, lyrics, media, community, and video_generation.
 ```
+content/
+  people/<slug>.md                 # frontmatter: roles, aliases, dates, links + bio prose
+  kalam/<slug>/
+    kalam.md                       # frontmatter: writer(s), languages + context/story prose
+    lines.yaml                     # canonical lines: stable id + order + text per language
+    annotations/<line-id>.md       # optional per-line commentary
+  renditions/<slug>.md             # frontmatter: kalam ref, reciter ref, R2 media key,
+                                   #   line selection + per-rendition variant overrides
+  renditions/<slug>.timings.json   # per-rendition timings (machine data)
+```
+
+## 5. Product surfaces and information architecture
+
+Three surfaces over one dataset:
+
+- **Player** (public, consume) — browse the catalog; play audio/video with synced
+  multilingual lyrics; toggle languages. Spans Listen, Companion, and Archive.
+- **Wiki / Reader** (public, read) — kalam context and story, reciter/writer
+  profiles, per-line annotations, and cross-links. Rendered by the app from the
+  published Markdown content; not a separate wiki engine.
+- **Studio** (contribute) — source intake, lyric development, and wiki authoring
+  (Submit / Community). Web; desktop-first for authoring, mobile for timing.
+- **Admin** (curate) — verification, merge/approve, publishing, preservation.
+
+Primary navigation: Listen, Companion, Archive, Submit, Community, Admin &
+Preservation, plus Queues, People, Generated Media. Every feature maps to one of
+these.
+
+## 6. Target stack
+
+- **Backend:** Django, DRF, PostgreSQL, Celery, Redis, S3-compatible storage
+  (Cloudflare R2 in prod, MinIO for local dev), FFmpeg, Django admin.
+- **Frontend:** React + Vite per `design-system.md`; mobile-first and installable
+  as a PWA (§15). Renders published Markdown for the Wiki/Reader surface.
+- **Worker:** Celery for ingestion, transcoding, waveforms, thumbnails, captions,
+  imports, **content-file publishing**, and lyric-video rendering.
+- **Content publishing:** a service/worker that writes approved DB records out to
+  the Markdown content repo and commits them.
+- **Search:** PostgreSQL full-text + trigram for v1.
+
+Django/DRF/Celery suits Dervaish's hardest problems: media ingestion, durable
+workflow state, admin operations, background processing, and data integrity. No
+PHP/Python mixing; Omeka S informs archive modeling only.
+
+## 7. Backend module architecture
+
+- `accounts`: users, roles, permissions, contributor trust, tokens, audit
+  identity.
+- `media`: uploads, assets, renditions (encodings), libraries, mirrors, captions,
+  chapters, thumbnails, waveforms, previews, playback URL signing.
+- `catalog`: **kalam (works)**, **renditions (recordings)**, collections, people,
+  credits, visibility, publication states, catalog APIs, search indexing.
+- `archive`: archive records, citations, provenance, source ratings, vocabulary
+  terms, JSON-LD export.
+- `lyrics`: canonical kalam lines, per-rendition timing and variants, languages,
+  imports/exports, editor drafts, validation, direction metadata.
+- `content`: wiki prose (kalam story, person bios, per-line annotations) and the
+  approval-time Markdown publisher to the content repo.
+- `community`: submissions, correction drafts, verification votes, disputes, track
+  requests, upvotes, moderation.
+- `video_generation`: render jobs (per rendition), layouts, payloads, logs,
+  previews, outputs, cancellation, publishing.
+- `public`: public serializers, listening/archive/wiki pages, share links,
+  JSON/JSON-LD.
+- `admin`: Django admin, review queues, dashboards, moderation, preservation.
+
+(Naming note: the media term "rendition" — an encoding of a media asset — is
+distinct from a catalog **Rendition** (a recording of a kalam). Keep the domain
+term dominant; consider renaming the media one to "encoding" to avoid collision.)
+
+## 8. Canonical data model
+
+Accounts: `User` (display name, email, role, trust score) and `Role`
+(anonymous/listener/contributor/editor/admin).
+
+Catalog — **the work/recording split is the core change:**
+
+- **`Kalam` (Work)** — the poem/text itself: title, slug, writer credit(s),
+  languages present, `is_canonical`/review state/version, and a prose
+  description/story. The canonical text lives here, not on a recording.
+- **`KalamLine`** — kalam FK, stable `line_id`, order, `text_by_language` (JSON).
+  The unit that renditions select and time and that annotations attach to.
+- **`Rendition` (Recording)** — a specific performance (this is what `Track`
+  becomes): kalam FK, reciter credit(s), media asset(s), visibility, publication
+  state, `published_at`. A rendition *selects and times* kalam lines.
+- **`RenditionLine`** — rendition FK, `KalamLine` FK, order, `start_ms`, `end_ms`,
+  optional `variant_text_by_language` override. **Timing is per-rendition** (each
+  recording is timed differently); variant text handles rendition-specific
+  wording; the selection handles "some lines only appear in some renditions."
+- `Person` (names, aliases, biography prose, origin, roles, external ids),
+  `Collection`, `TrackCredit`/`RenditionCredit` (writer(s) on the kalam;
+  reciter(s)/translator(s) on the rendition).
+
+Media: `MediaAsset` (original; kind, storage key in R2, checksum, MIME, size,
+duration, provenance), `MediaEncoding` (derived playable rendition of the asset),
+`Caption`, `Chapter`, `UploadSession`, `MediaDerivative` (thumbnail/waveform/
+preview), `MediaProcessingJob`.
+
+Archive: `ArchiveRecord`, `Citation`, `ProvenanceRecord`, `SourceRating`,
+`VocabularyTerm` (as before — source-critical metadata, provenance, JSON-LD).
+
+Lyrics/content: canonical text = `Kalam` + `KalamLine`; timing/variants =
+`Rendition` + `RenditionLine`; `Language` lanes (code, name, role
+original/translation/transliteration/commentary, direction, is_published) apply at
+the kalam level (available) and are chosen per rendition (visible/rendered).
+Wiki prose lives as `Kalam.description`, `KalamLine.annotation`, `Person.biography`
+(all published to Markdown on approval). `UserLyricPreference` persists visible
+languages per user. (This supersedes the earlier `LyricSet/LyricLanguage/
+LyricSegment`-on-Track shape: canonical text moves up to the kalam, timing moves
+down to the rendition.)
+
+Community: `Submission`, `CorrectionDraft`, `VerificationVote`, `TrackRequest`,
+`TrackRequestVote` — as in §12.
+
+Video generation: `VideoGenerationJob` renders a **Rendition** (source asset +
+`RenditionLine` timing + text resolved from `KalamLine` and variant overrides;
+title/writer from the kalam, reciter from the rendition), with source mode
+audio_visualizer|video_overlay, layout id, resolution, payload, logs, preview/
+output assets.
+
+All public models carry timestamps; reviewable models carry created/updated/
+reviewed-by, state, and audit coverage.
+
+## 9. Media pipeline
+
+Upload: request session → `MediaAsset` pending + presigned `UploadSession` (R2) →
+client uploads original → worker verifies checksum/MIME/duration/codecs/size/kind,
+updates metadata, queues derived processing. Originals immutable, stored separately
+from replaceable encodings; captions, chapters, thumbnails, waveforms, and
+generated outputs are separate objects; storage keys include environment, object
+type, id, and version. Transcode audio (Opus, AAC/MP3, preserving masters), video
+(web MP4, HLS), images (thumbnails, responsive). Audio waveforms are **required for
+Studio timing**. WebVTT is the v1 caption interchange. Playback returns a manifest
+(preferred encoding, fallback mirrors, captions, chapters, lyric metadata) with
+signed URLs for private/pending assets and cacheable URLs (CDN) for public ones.
+Generated video: preview first, editor approval, provenance retained (see §14).
+
+## 10. Archive metadata
+
+Omeka-like archival depth without a generic clone. `ArchiveRecord`s link kalam,
+renditions, people, collections, media, citations, and provenance, with visibility
+states. `VocabularyTerm` for controlled/linked-data terms, but common devotional
+fields stay explicit columns for editor usability. Citations are reusable/linkable;
+provenance captures source, URL, acquisition date, checksum, importer,
+transformation, notes; source ratings separate editorial from community trust.
+JSON-LD for public kalam, renditions, people, records, collections, citations, and
+media.
+
+## 11. Lyrics and wiki content design
+
+**Canonical text belongs to the Kalam; timing belongs to the Rendition.** A
+`Kalam` holds its lines (`KalamLine`, stable ids) with text per language, the
+writer(s), and the story/context prose. A `Rendition` references a kalam, selects
+which lines it includes (subset/reordering), optionally overrides wording
+(`variant_text_by_language`), and stores per-line `start_ms`/`end_ms`. This models
+"some lyrics appear only in specific renditions" and per-recording timing directly.
+
+Text and timing are structured; **prose is Markdown**. Millisecond timings live in
+`RenditionLine` / `timings.json` frontmatter, never in prose. The wiki content —
+kalam story/context, reciter/writer bios, and per-line annotations — is authored as
+prose and published to Markdown.
+
+Descriptions/annotations attach at three levels: **kalam** (overall story),
+**line** (a note keyed to a `KalamLine` id), and **rendition** (recording-specific
+notes). The Reader surface renders these with line anchors so a visitor can jump
+from a verse to its commentary and see who wrote and who is reciting.
+
+Editing: contributors draft in Studio; editors align timing, add languages/
+annotations, and publish. Import/export WebVTT, LRC, TTML, Dervaish JSON. On
+approval the content publisher writes `kalam/`, `renditions/`, `people/`, and
+`annotations/` files to the Git repo (§4). Lanes carry `dir`/`lang` with
+mixed-direction-safe rendering everywhere.
+
+## 12. Community contribution workflow
+
+### 12.1 Stage 1 — Source intake (public)
+
+Row-based **bulk grid**: URL, title, reciter(s), writer(s) per row → a draft
+**Rendition** (and its `Kalam` if new) + a `MediaAsset`. **URL fetch is manual and
+best-effort** (per-row Fetch + Try-to-fetch-all; Celery `INGEST`), with an
+always-available **manual upload** fallback; fetchers are pluggable. Reciter/writer
+free text is **resolved to `Person`** at verification (via aliases). Duplicate
+guard on `checksum_sha256` and normalized URLs.
+
+### 12.2 Stage 2 — Verification (admin only)
+
+Confirm applicability, shareability (rights), non-duplication; resolve credits;
+record a rejection reason. On accept, the rendition opens for lyric work and ingest
+side-jobs run (duration, **waveform**, thumbnail).
+
+### 12.3 Stage 3 — Lyric development (volunteers), three micro-tasks
+
+Against **shared line IDs** (the `KalamLine`s): (1) **transcription/segmentation**
+establishes the kalam's canonical text and line breaks once; (2) **timing** — many
+volunteers time the fixed lines for a given rendition, collected redundantly; (3)
+**translation/transliteration** attaches languages to the same line ids. Wiki
+prose (story, bios, annotations) is a parallel authoring task. Each contribution is
+a `Submission` for attribution.
+
+### 12.4 Stage 4 — Merge and approve (admin)
+
+Shared segmentation makes merges deterministic: per line, **median start/end**
+across timing passes, auto-flagging disagreement beyond ~400 ms; per-line text
+consensus; combine languages; set canonical, bump version; preserve attribution.
+
+### 12.5 Stage 5 — Publish and render
+
+Approval triggers two outputs: the **content publisher** writes Markdown/structured
+files to the Git repo (§4), and a `VideoGenerationJob` renders the rendition on the
+local GPU worker (§14).
+
+### 12.6 Wiki loop and needs-work queue
+
+Post-canonical, the public proposes `CorrectionDraft`s (text, timing, or wiki
+prose); others verify/dispute via `VerificationVote`; an admin merges and
+re-publishes. A **needs-work queue** (via `TrackRequest` + upvotes) surfaces kalam
+needing transcription, N more timing passes, a translation, or missing context.
+
+### 12.7 Supporting mechanics
+
+Submission review states (draft → submitted → under review → changes requested →
+approved/rejected → published); partial correction acceptance; one verification
+vote per user/field (writer, reciter, lyrics, source, overall); track-request
+statuses; contributor trust that can order queues but not bypass review in v1 (a
+trusted fast-path is open — §19). Every moderation/publish/correction action writes
+an audit entry.
+
+## 13. Object state machines
+
+- **Source / MediaAsset:** submitted → verifying → accepted / rejected /
+  duplicate.
+- **Kalam text:** draft → merge-candidate → canonical (→ published to Markdown).
+- **Rendition:** draft → open-for-lyrics → in-development → finalized → published.
+- **VideoGenerationJob:** queued → running → completed → published.
+- **Content file:** (on approval) generated → committed to content repo.
+
+## 14. Rendering architecture
+
+```
+Browser (React Studio) → DRF API → PostgreSQL (working + index, review state)
+                                  → R2 (audio, source video, waveforms, outputs)
+                                  → Git content repo (published Markdown, on approval)
+
+DRF queues VideoGenerationJob (per Rendition) → Redis (Celery broker)
+  → Celery worker on the local i9 / RTX 5090          [CONFIRMED render host]
+      downloads source asset from R2
+      adapter: render_payload → renderer inputs
+      runs existing GPU pipeline (video-gen-v3 / gpu_render, NVENC)
+      uploads preview + output MP4 to R2  (also kept locally in OneDrive)
+      marks job COMPLETED → publish attaches output to the rendition
+```
+
+Render host (confirmed): local 5090 as a Celery worker — reuses the renderer and
+GPU at near-zero cost; the machine must be online to drain the queue. `build_render_payload`
+already emits `{ jobId, sourceMode, sourceUrl, layoutId, resolution, title, voice,
+writer, visibleLanguages, segments:[{startMs,endMs,textByLanguageId}], outputDir }`;
+segments now come from `RenditionLine` timing with text resolved from `KalamLine` +
+variant overrides. A small **adapter** maps the payload to the renderer's current
+inputs (its `lyrics.json` shape + `layouts/<layout_id>/`); layouts stay as files on
+the worker. `video_overlay` compositing is a new renderer capability. Generated
+media follows §9: preview first, editor approval, provenance retained.
+
+## 15. Client and distribution strategy
+
+- **Web player + Wiki/Reader** (desktop + mobile-responsive) — the distinctive
+  Dervaish experience: parallel multilingual synced lyrics, video, and the
+  reading/context layer.
+- **Mobile via responsive PWA, not native (for now).** Timing (tap-to-time) and
+  single/share-sheet source submission suit mobile; transcription, sustained
+  translation, and merge stay desktop. Time against the Web Audio clock.
+- **Audio background listening + offline via OpenSubsonic.** Expose the catalog
+  over Subsonic/OpenSubsonic so mature third-party clients (Symfonium, Feishin,
+  Amperfy, Supersonic) give background playback, offline, gapless, and scrobbling.
+  OpenSubsonic `getLyricsBySongId` carries synced multi-language lyrics (per-entry
+  `lang` + `synced`); `RenditionLine` timing + `KalamLine` text map to it almost
+  one-to-one. Caveats: most clients show one language at a time, audio only,
+  playback only. Adoption: trial **Navidrome** first, then implement the endpoints
+  in the backend.
+- **Native deferred**; API-first backend makes it a later drop-in.
+
+Frontend follows `design-system.md`: semantic tokens, lucide icons, `aria-label`+
+`title` on icon-only controls, no color-only status, `dir`/`lang` and
+mixed-direction-safe lyric rendering.
+
+## 16. API design
+
+REST with DRF and pagination; public endpoints never leak drafts. Accounts,
+catalog+playback (now split into kalam and rendition resources), archive+JSON-LD,
+lyrics (kalam lines, rendition timings, import/export), wiki content
+(kalam/person/annotation reads; edits via submissions/corrections), submissions +
+community verification + track requests, admin review/publish + media, and
+video-generation jobs (`POST/GET /api/video-generation/jobs/…`,
+`…/{id}/cancel/`, `…/{id}/publish/`). Add OpenSubsonic endpoints under §15.
+
+## 17. Migration and import strategy
+
+Start fresh with minimal seed fixtures (one kalam with RTL+LTR lines, one
+rendition with timing, one person, one collection, one archive record, one
+citation, one media asset). Use the old prototype only as a behavior inventory.
+Optional importers (after the model is stable) map MediaCMS media → `MediaAsset`,
+encodings → `MediaEncoding`, subtitles → captions; Omeka S items/sets/values →
+archive records/collections/values; preserve original ids in provenance. Imports
+are batch-tracked, dry-runnable, resumable, and land in draft/pending.
+
+## 18. Roadmap
+
+The greenfield backend build is largely complete; QA validated the integration
+surfaces. Go-forward (authoritative):
+
+- **Phase 0 — Prove the pipe.** Local docker-compose (Postgres/Redis/MinIO),
+  connect the local worker, replace the render placeholder for `audio_visualizer`.
+  Success = one job: browser → queue → 5090 → real MP4 in R2 → COMPLETED.
+- **Phase 1 — Kalam/Rendition + minimal Studio loop.** Introduce the work/recording
+  split; editor (pick rendition → transcribe kalam → time → translate → submit) +
+  reviewer approve → canonical; wire `platform-web` to the live API.
+- **Phase 1b — Content publisher + Wiki/Reader.** On approval, generate Markdown
+  files to the content repo; build the read surface (kalam story, person pages,
+  line annotations).
+- **Phase 2 — Video overlay + rich layouts.**
+- **Phase 3 — Community + distribution.** Verification votes, track requests,
+  corrections in the UI; trial Navidrome; then OpenSubsonic endpoints.
+
+## 19. Decisions made and open decisions
+
+**Decided:** greenfield Django/DRF/Celery; local 5090 Celery render worker;
+media blobs on **Cloudflare R2**, renders kept in OneDrive + uploaded to R2,
+**OneDrive/SharePoint as manual cold backup** until an automated mirror exists;
+**database is the working store (retained)**, **readable Markdown files generated
+only on approval** as the preservation/open copy; **Kalam (work) vs Rendition
+(recording)** as distinct entities with per-rendition line selection, variants, and
+timing; wiki-style reading layer rendered from the Markdown content; URL fetch
+manual + best-effort with upload fallback; Stage 3 split into transcription →
+timing → translation on shared line ids; mobile via PWA with timing as the flagship
+task; audio/offline via OpenSubsonic (Navidrome first).
+
+**Open:** trusted-contributor fast path (leaning later); layouts as worker files vs
+DB/JSON; SVG import dependency; exact rendered-language selection mapping; the
+content repo's edit path for non-technical wiki contributors (all via the app, or
+direct Git for advanced users); and confirming automated mirror design when it
+replaces manual backup.
+
+## 20. Validation plan
+
+Backend: model tests (kalam/rendition constraints, line selection, per-rendition
+timing non-overlap, votes, publication); API tests (permissions, pagination,
+signed URLs, visibility, review); Celery tests (processing transitions, retries,
+cancellation, **content-file publishing**, render output). Media: fixtures for
+audio/video/captions/bad inputs; immutable masters; waveform/thumbnail/manifest.
+Lyrics/content: import/export round-trips; RTL/LTR; annotation linkage;
+publish-to-Markdown fidelity (DB → files → re-read). Community: submission
+lifecycle, partial corrections, vote replacement, request uniqueness, trust.
+Frontend: component + e2e + a real browser Playwright smoke suite (desktop/mobile
+first paint, navigation, playback bar, RTL/LTR lyrics, wiki reading, forms,
+keyboard focus).
+
+## 21. Risks, gotchas, and environment notes
+
+**Risks/mitigations:** broad scope → vertical slices; MediaCMS/Omeka licensing →
+reference only; media/egress cost → R2 zero-egress + encoding profiles, quotas,
+retry limits, editor approval before expensive generation; metadata
+over-abstraction → explicit models, flexible values only where they earn it;
+search → Postgres FTS/trigram first; performance → pagination, prefetch,
+read-optimized serializers, CDN, cached public/wiki pages; DB↔files drift →
+one-way publish-on-approval with checksums, DB remains source for editing;
+maintainability → explicit state machines, centralized permissions, early audit.
+
+**Operational gotchas:** the 5090 is the render farm — the queue drains only while
+it is on; many concurrent NVENC sessions can exceed the session limit → libx264
+fallback (logged, harmless); browser preview ≠ final render (different text engine;
+local render is source of truth); term collision between media "rendition"
+(encoding) and catalog **Rendition** (recording) — prefer "encoding" for media.
+**Assistant-sandbox note:** OneDrive-mounted renderer files can read truncated in
+the coding sandbox — verify via Read/Grep; the user's disk is correct.
+
+## 22. References
+
+- OpenSubsonic — `getLyricsBySongId`:
+  https://opensubsonic.netlify.app/docs/endpoints/getlyricsbysongid/
+- OpenSubsonic — Song Lyrics extension:
+  https://opensubsonic.netlify.app/docs/extensions/songlyrics/
+- Navidrome — Lyrics: https://deepwiki.com/navidrome/navidrome/9.4-lyrics
+- Navidrome — Client apps: https://www.navidrome.org/apps/
+- `docs/design-system.md` — UI and workflow design rules.
+- `Lyrics Video/docs/HANDOFF.md`, `UPGRADE.md` — renderer-side notes.
