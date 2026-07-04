@@ -1,0 +1,10 @@
+# Normalize line endings so the working tree stops showing every file as modified.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.mp3 binary
+*.mp4 binary
+*.opus binary
+*.woff binary
+*.woff2 binary
