@@ -41,17 +41,27 @@ contributions summary, trust score. Role: listener+. Layout: detail + fieldsets.
 Components: profile fields, language-lane defaults, contribution history link.
 States: loading, saved confirmation, error (input preserved).
 
+### A4. Playback & mirror settings
+Route: `/me/settings`. Purpose: playback quality, and **media-mirror / source
+selection** (federation). Role: listener+. Layout: editor form. Components:
+streaming quality, official **mirror directory** (from `/directory/mirrors/`) with
+per-mirror enable/disable + verified/unverified trust chips, add-custom-mirror by
+URL, (optional) content-source list. States: loading, offline (device-local
+selections), error. Actions: toggle mirrors, add mirror/source, reset to defaults.
+The player fails over across enabled mirrors in priority order.
+
 ---
 
 ## B. Player / Wiki (public)
 
 ### B1. Home / Listen (browse)
 Route: `/`. Purpose: discover kalam, renditions, collections, curated groups.
-Role: anonymous+. Layout: browse/list. Components: search bar, curated shelves,
-rendition rows (title, reciter/writer, duration, lyric-availability chip, media
-type, upvote), collection cards. States: loading skeleton shelves, empty ("no
-published content yet"), error. Actions: play, queue, open kalam/rendition,
-upvote (gated), open collection.
+Role: anonymous+. Layout: browse/list. Components: search bar, **Continue
+listening** shelf (from `PlaybackState`), **Your library** shelf (from
+`SavedItem`), curated shelves, rendition rows (title, reciter/author, duration,
+lyric-availability chip, media type, upvote), collection cards. States: loading
+skeleton shelves, empty ("no published content yet"), error. Actions: play, queue,
+save to library, open kalam/rendition, upvote (gated), open collection.
 
 ### B2. Search & results
 Route: `/search?q=`. Purpose: search kalam, renditions, people, collections,
@@ -64,20 +74,24 @@ open result, play.
 ### B3. Kalam page (the work)
 Route: `/kalam/<slug>`. Purpose: the poem itself — canonical text, languages,
 story/context, writer credit(s), and all its renditions. Role: anonymous+.
-Layout: detail. Components: header (title, writer links, languages), **story/
-context prose** (from Markdown), canonical lines with per-line **annotation**
-anchors, language toggle, **list of renditions** (reciter, media type, duration,
-"has video"), archive context, correction entry. States: loading, partial
-(no renditions yet; text draft vs canonical badge), error. Actions: open a
-rendition, toggle languages, jump to a line's annotation, propose correction.
+Layout: detail. Components: header (titles native/transliterated, author link,
+genre/tradition/era taxonomy chips, languages), **story/context prose** (from
+Markdown), **verses** (native · transliteration · translation · **meaning**) with
+per-verse **annotation** anchors, layer + language toggles, **list of renditions**
+(reciter, media type, duration, "has video"), archive context, correction entry.
+States: loading, partial (no renditions yet; text draft vs canonical badge), error.
+Actions: open a rendition, toggle layers/languages, jump to a verse's meaning/
+annotation, propose correction.
 
 ### B4. Rendition player + Companion
 Route: `/rendition/<slug>`. Purpose: play a recording with synced multilingual
 lyrics; or watch its video / generated lyric video. Role: anonymous+. Layout:
-Companion. Components: **audio or video player**, synced lyric view (active line
-prominent, prev/next context, original + translation + transliteration stacked),
+Companion. Components: **audio or video player**, synced lyric view (active verse
+prominent, prev/next context, original + transliteration + translation stacked),
+**layer toggle** (script ↔ transliteration ↔ translation ↔ **meaning**),
 **language picker** (checkbox chips, roles labelled), reciter credit, kalam/archive
-context rail, per-line annotation popovers, correction entry, queue/add.
+context rail, per-verse **meaning** + annotation popovers, correction entry,
+queue/add.
 States: loading, media-error (missing source / unavailable mirror / unsupported /
 network — explained), lyrics-missing (link to contribute in Studio), partial
 (some lanes incomplete). Actions: play/seek, toggle lanes, save language
@@ -181,12 +195,12 @@ submitted, error. Actions: submit request.
 
 ## D. Community (public participation)
 
-### D1. Track requests
-Route: `/community/requests`. Purpose: browse/upvote requests. Role: anonymous+
-(vote listener+). Layout: browse/list. Components: request cards (title/target,
-hints, status Open/Planned/Fulfilled, upvote + current-user state), sort by
-upvotes/recency. States: empty, loading, error, vote-gated prompt. Actions:
-upvote, open, create.
+### D1. Requests (needs-work)
+Route: `/community/requests`. Purpose: browse/upvote `KalamRequest`s (missing/
+improved material). Role: anonymous+ (vote listener+). Layout: browse/list.
+Components: request cards (title/target, author/reciter hints, status Open/Planned/
+Fulfilled, upvote + current-user state), sort by upvotes/recency. States: empty,
+loading, error, vote-gated prompt. Actions: upvote, open, create.
 
 ### D2. Verification participation
 Route: on rendition/submission surfaces. Purpose: community verify/dispute of
@@ -250,8 +264,9 @@ publish output to rendition.
 ### E7. People & credits
 Route: `/admin/people`. Purpose: manage `Person` records, merge duplicates,
 attach credits. Role: editor/admin. Layout: browse/list + editor. Components:
-person table (name, aliases, roles), merge tool, credit editor (KalamCredit /
-RenditionCredit). States: loading, duplicate-candidates, error. Actions:
+person table (name, aliases, roles), merge tool, unified `Credit` editor (author on
+kalam; reciter/voice on rendition). States: loading, duplicate-candidates, error.
+Actions:
 create/edit/merge, resolve aliases, edit bio.
 
 ### E8. Publish log / content repo

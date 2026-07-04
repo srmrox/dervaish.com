@@ -66,8 +66,15 @@ system (Celery).
 `MediaProcessingJob` with status, attempts, logs.
 
 **State:** `MediaAsset` pending → processing → ready (or failed). **Failure:**
-ret/ry with backoff; on terminal failure mark asset failed and surface in the admin
+retry with backoff; on terminal failure mark asset failed and surface in the admin
 media queue.
+
+**Playback (read path).** `GET /renditions/{slug}/playback/` returns a **manifest**
+— never bytes: `protection_level`, `variants[]` (with `streaming`/
+`offline_download` flags and per-variant `mirrors[]` ordered by the
+`federation` resolver, R2 primary), captions, and `lyric_timings_url`. `open` →
+public CDN URLs; `signed`/`drm` → signed/expiring URLs. The client fails over
+across enabled mirrors.
 
 ---
 
@@ -78,10 +85,11 @@ sources). **Actor:** editor/admin. **Precondition:** source present.
 
 **Steps.**
 1. Confirm the source is applicable, shareable (rights), and not a duplicate.
-2. **Resolve credits:** map free-text reciter/writer to `Person` (via
-   `Person.aliases`), creating `KalamCredit` (writer) and `RenditionCredit`
-   (reciter).
-3. Decide: **accept**, **reject** (with reason), or mark **duplicate**.
+2. **Resolve credits & taxonomy:** map free-text reciter/writer to `Person` (via
+   `Person.aliases`) as unified `Credit` rows (author on the kalam, reciter/voice
+   on the rendition); set genre/tradition/era/theme via `taxonomy.VocabularyTerm`.
+3. **Set `protection_level`** (open/signed/drm) per the rights check.
+4. Decide: **accept**, **reject** (with reason), or mark **duplicate**.
 
 **State on accept:** `Rendition` draft → open-for-lyrics; ensure waveform job ran.
 **On reject/duplicate:** `Rendition`/`MediaAsset` → rejected/duplicate with a
@@ -91,21 +99,21 @@ recorded reason. **Audit:** yes.
 
 ## 4. Lyric development (volunteers) — three micro-tasks
 
-All operate against **shared `KalamLine` ids**. Each contribution is a
+All operate against **shared `Verse` ids**. Each contribution is a
 `Submission` (status draft → submitted) for attribution. **Actor:** contributor.
 **Precondition:** rendition open-for-lyrics; kalam exists.
 
 **4a. Transcription / segmentation.** Establish the kalam's canonical text and line
-breaks once: create/edit `KalamLine` rows (stable `line_id`, order,
+breaks once: create/edit `Verse` rows (stable `line_id`, order,
 `text_by_language[original]`). Others propose corrections rather than
 re-segmenting. State: `Kalam` text → draft.
 
 **4b. Timing.** Volunteer times the fixed lines for a given rendition: creates a
-set of `RenditionLine` rows (start_ms/end_ms per included `KalamLine`) — collected
+set of `RenditionVerseTiming` rows (start_ms/end_ms per included `Verse`) — collected
 **redundantly** (multiple independent passes, each its own `Submission`).
 
 **4c. Translation / transliteration.** Add a `Language` lane and fill
-`KalamLine.text_by_language[code]` for that lane; attaches to the same line ids.
+`Verse.text_by_language[code]` for that lane; attaches to the same line ids.
 
 **Wiki authoring (parallel task).** Draft `Annotation`s (kalam/line/rendition) and
 edit `Kalam.description` / `Person.biography` prose. State: `review_status` draft →
@@ -121,8 +129,8 @@ incomplete translations are allowed (a language may be partial).
 **Trigger:** a rendition has enough submissions. **Actor:** editor/admin.
 
 **Steps.**
-1. **Timing merge:** per `KalamLine`, compute **median** start/end across the
-   redundant `RenditionLine` passes; auto-flag lines whose spread exceeds a
+1. **Timing merge:** per `Verse`, compute **median** start/end across the
+   redundant `RenditionVerseTiming` passes; auto-flag lines whose spread exceeds a
    threshold (~400 ms) for manual review.
 2. **Text consensus:** per line, reconcile `text_by_language`; highlight
    disagreements.
@@ -162,8 +170,8 @@ approval). **Actor:** editor/admin + system + **local 5090 worker**.
 **Steps.**
 1. Create `VideoGenerationJob` (rendition, source_asset, source_mode, layout_id,
    resolution, visible_language_codes, denormalized title/voice/writer).
-2. `build_render_payload` assembles segments from `RenditionLine` timing with text
-   resolved from `KalamLine` + variant overrides; status → queued; dispatch Celery
+2. `build_render_payload` assembles segments from `RenditionVerseTiming` timing with text
+   resolved from `Verse` + variant overrides; status → queued; dispatch Celery
    task (Redis broker).
 3. The **local 5090 worker** picks up the job: downloads the source from R2 →
    adapter maps payload to renderer inputs → runs the GPU pipeline (video-gen-v3 /
@@ -196,7 +204,7 @@ Rejected corrections remain auditable.
 
 **Verification voting:** one `VerificationVote` per (submission, voter, field);
 later votes replace earlier ones; summaries show verify/dispute counts (never
-auto-publish). **Track requests / needs-work:** `TrackRequest` (+ `TrackRequestVote`
+auto-publish). **Requests / needs-work:** `KalamRequest` (+ `RequestUpvote`
 upvotes) captures demand; the needs-work queue derives from renditions missing a
 transcription, N timing passes, a translation, or context. **Upvotes:**
 `RenditionVote` is a lightweight signal, not verification.
@@ -208,7 +216,7 @@ transcription, N timing passes, a translation, or context. **Upvotes:**
 **Trigger:** a Subsonic client requests catalog/stream/lyrics. **Actor:** external
 client + backend. **Steps.** Implement OpenSubsonic endpoints over the catalog:
 browse → `Rendition`/`Kalam`; stream → signed R2 URL; `getLyricsBySongId` →
-`structuredLyrics` built from `RenditionLine` timing + `KalamLine` text (one entry
+`structuredLyrics` built from `RenditionVerseTiming` timing + `Verse` text (one entry
 per `Language`). Read-only; auth via Subsonic token mapped to `accounts.User`.
 
 ---

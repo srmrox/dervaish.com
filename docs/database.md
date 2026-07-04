@@ -1,23 +1,22 @@
 # Dervaish Database Structure
 
-_Last updated: 2026-07-04. Target relational schema for the Dervaish backend
-(PostgreSQL via Django ORM), aligned to `plan.md`. This reflects the **Kalam
-(work) vs Rendition (recording)** model and the content-publishing design. Where
-it differs from what is currently implemented, see §Deltas at the end._
+_Last updated: 2026-07-04. Target relational schema (PostgreSQL via Django ORM),
+aligned to `plan.md`. This merges the domain model already built in the repo's
+`backend/` (Kalam/Verse/Rendition, taxonomy, federation) with the Dervaish-Studio
+additions we are keeping (Markdown/Git preservation, richer contribution workflow,
+local render). We are **rebuilding the code cleanly** but adopting the built
+model's shapes and names as the base. Legend: **[built]** already in `backend/`;
+**[add]** our addition / to-build; **[keep]** our earlier decision retained._
 
 ## Conventions
 
-- Every table has an integer primary key `id` unless noted.
-- **`TimestampedModel`** (abstract) adds `created_at` (auto add) and `updated_at`
-  (auto now). Every concrete table below includes these.
-- **`EditorialModel`** (abstract, extends `TimestampedModel`) adds `visibility`
-  (`EditorialState`), `created_by` → `accounts.User` (SET_NULL), `updated_by` →
-  `accounts.User` (SET_NULL). Tables that extend it are marked **(Editorial)**.
-- Durations and timings are integer **milliseconds**.
-- Multilingual text is stored as JSON keyed by language `code`
-  (`text_by_language = {"ur": "...", "en": "..."}`).
-- Public-addressable entities carry a unique `slug`.
-- `review_status` uses `ReviewState`; content/records use `EditorialState`.
+- Integer PK `id` unless noted. `TimestampedModel` → `created_at`, `updated_at`.
+  `EditorialModel` → adds `visibility` (`EditorialState`), `created_by`,
+  `updated_by`. Tables marked **(Editorial)** extend it.
+- Timings in integer **milliseconds**. Multilingual text as JSON keyed by language
+  code (`translations = {"en": "...", "ur": "..."}`).
+- Public-addressable entities carry a unique `slug`. Language direction (RTL/LTR)
+  is derived from the language `VocabularyTerm`.
 
 ### Enumerations
 
@@ -26,535 +25,359 @@ it differs from what is currently implemented, see §Deltas at the end._
 | `EditorialState` | draft, pending_review, public, unlisted, private, archived |
 | `ReviewState` | draft, submitted, under_review, changes_requested, approved, rejected, published |
 | `RoleKind` | anonymous, listener, contributor, editor, admin |
-| `PersonRole` | reciter, writer, translator, contributor |
-| `LyricLanguageRole` | original, translation, transliteration, commentary |
-| `LyricDirection` | ltr, rtl |
+| `PersonRole` | author/writer, reciter/voice_artist, composer, translator, source_contributor, editor |
+| `TermKind` (taxonomy) | genre, language, tradition, era, theme, region |
+| `ProtectionLevel` | open, signed, drm |
 | `MediaKind` | audio, video, image, document |
 | `ProcessingStatus` | pending, processing, ready, failed |
-| `UploadSessionStatus` | pending, uploaded, cancelled, expired |
-| `MediaProcessingJobKind` | ingest, transcode, thumbnail, waveform |
-| `AnnotationTarget` | kalam, line, rendition |
+| `MediaMirrorKind` | r2, cdn, github, external, local |
+| `ContentSourceKind` | official, community, personal |
+| `AnnotationTarget` | kalam, verse, rendition |
+| `PublishStatus` | pending, committed, failed |
 | `VideoGenerationSourceMode` | audio_visualizer, video_overlay |
 | `VideoGenerationStatus` | queued, running, completed, failed, cancelled |
-| `VideoGenerationResolution` | 720p, 1080p, 4k |
 | `CitationType` | interview, book, field_recording, website, manuscript |
-| `VerificationField` | writer, reciter, lyrics, source, overall |
+| `VerificationField` | author, reciter, lyrics, source, overall |
 | `VerificationVoteValue` | verify, dispute |
-| `TrackRequestStatus` | open, planned, fulfilled, duplicate, rejected |
-| `ImportSource` | dervaish_prototype, mediacms, omeka_s |
-| `ImportBatchStatus` | draft, dry_run, running, completed, failed |
-| `PublishStatus` | pending, committed, failed |
+| `RequestStatus` | open, planned, fulfilled, duplicate, rejected |
+| `ImportSource` / `ImportBatchStatus` | prototype/mediacms/omeka_s · draft/dry_run/running/completed/failed |
 
 ---
 
-## accounts
+## accounts [built]
 
-### User (extends Django AbstractUser)
+**User** (AbstractUser): + `display_name`, `role` (`RoleKind`, default listener),
+`trust_score` (PosInt). **Role**: `code` (`RoleKind`, unique), `name`,
+`description`.
+
+---
+
+## taxonomy [built]
+
+### VocabularyTerm — controlled vocabularies reused everywhere
 | Column | Type | Notes |
 |---|---|---|
-| username, email, password, … | (AbstractUser) | standard auth fields |
-| display_name | Char(160) | optional |
-| role | Char(24) `RoleKind` | default listener |
-| trust_score | PosInt | default 0 |
-
-### Role
-| Column | Type | Notes |
-|---|---|---|
-| code | Char(24) `RoleKind` | **unique** |
-| name | Char(80) | |
+| kind | Char(16) `TermKind` | genre/language/tradition/era/theme/region |
+| code | Slug(80) | unique (`kind`, `code`) |
+| label | Char(160) | |
+| label_native | Char(160) | script form |
 | description | Text | |
+| parent | FK → self | null; hierarchical terms |
+
+Language terms should carry direction (LTR/RTL) in metadata for lyric rendering.
 
 ---
 
-## catalog
+## catalog [built, + our additions]
 
 ### Person **(Editorial)**
 | Column | Type | Notes |
 |---|---|---|
-| name | Char(180) | |
-| slug | Slug(200) | **unique** |
-| aliases | JSON(list) | for dedup/matching |
-| primary_role | Char(32) `PersonRole` | default contributor |
-| biography | Text | prose → published to `people/<slug>.md` |
-| origin | Char(160) | |
+| name / name_native | Char(200) | Latin + script |
+| slug | Slug(220) | unique |
+| aliases | JSON(list) | dedup/matching |
+| biography | Text | prose → `people/<slug>.md` on publish |
+| era / region | Char | |
+| tradition | FK → taxonomy.VocabularyTerm | null (kind=tradition) |
+| portrait | FK → media.MediaAsset | null |
 | external_ids | JSON(dict) | |
 
 ### Kalam (the work) **(Editorial)**
 | Column | Type | Notes |
 |---|---|---|
-| title | Char(240) | |
-| slug | Slug(260) | **unique** |
-| primary_language_code | Char(16) | default "ur" |
-| description | Text | context/story prose → `kalam/<slug>/kalam.md` |
-| review_status | Char(32) `ReviewState` | default draft |
-| version | PosInt | default 1; bumped on canonical edits |
-| is_canonical | Bool | one canonical text per kalam |
-| collection | FK → Collection | null, SET_NULL |
+| title / title_native / title_transliterated | Char(260) | |
+| slug | Slug(280) | unique |
+| author | FK → Person | null; related `authored_kalams` |
+| primary_language | FK → VocabularyTerm | kind=language |
+| genre | FK → VocabularyTerm | kind=genre (hamd/naat/manqabat/qawwali/kafi…) |
+| tradition | FK → VocabularyTerm | kind=tradition (silsila) |
+| era | Char(120) | |
+| themes | M2M → VocabularyTerm | kind=theme |
+| tags | JSON(list) | free tags |
+| summary | Text | context/story prose → `kalam/<slug>/kalam.md` |
 | published_at | DateTime | null |
 
-Canonical text lives in **KalamLine** (below), not on recordings.
+Canonical text lives in **Verse**.
 
-### KalamLine
+### Verse (ordered child of Kalam) [built]
 | Column | Type | Notes |
 |---|---|---|
-| kalam | FK → Kalam | CASCADE |
-| line_id | Char(32) | stable id, unique within kalam (e.g. "l001") |
-| display_order | PosInt | |
-| text_by_language | JSON(dict) | `{code: text}` |
+| kalam | FK → Kalam | CASCADE, related `verses` |
+| order | PosInt | the stable per-kalam id / anchor |
+| text_native | Text | original script |
+| transliteration | Text | |
+| translations | JSON(dict) | `{lang: text}` |
+| meaning | JSON(dict) | `{lang: line-level tafseer/commentary}` |
 
-Constraints: unique (`kalam`, `line_id`); index (`kalam`, `display_order`).
+Constraint: unique (`kalam`, `order`). Powers both the reader and synced lyrics.
+The per-verse `meaning` gives the Companion "meaning toggle"; longer prose lives in
+`content.Annotation`.
 
-### Rendition (a recording) **(Editorial)**
+### Rendition (a recording) **(Editorial)** [built]
 | Column | Type | Notes |
 |---|---|---|
-| kalam | FK → Kalam | CASCADE |
-| title | Char(240) | optional override of kalam title |
-| slug | Slug(260) | **unique** |
-| duration_ms | PosInt | default 0 |
-| primary_language_code | Char(16) | |
-| media_assets | M2M → media.MediaAsset | audio/video for this recording |
+| kalam | FK → Kalam | CASCADE, related `renditions` |
+| title | Char(260) | optional override |
+| slug | Slug(280) | unique |
+| duration_ms | PosInt | |
+| year / album / publisher / style | — | source metadata |
+| media_assets | M2M → media.MediaAsset | audio and/or video |
+| protection_level | Char(8) `ProtectionLevel` | default open (streaming URL policy) |
+| rights_note | Char(300) | |
 | published_at | DateTime | null |
 
-A rendition **selects and times** kalam lines via RenditionLine.
+Selects and times verses via `lyrics.RenditionVerseTiming`.
 
-### RenditionLine
+### Credit (unified) [built]
 | Column | Type | Notes |
 |---|---|---|
-| rendition | FK → Rendition | CASCADE |
-| kalam_line | FK → KalamLine | PROTECT |
-| display_order | PosInt | order within the rendition |
-| start_ms | PosInt | per-rendition timing |
-| end_ms | PosInt | `end_ms > start_ms` |
-| variant_text_by_language | JSON(dict) | null; rendition-specific wording override |
-
-Constraints: unique (`rendition`, `kalam_line`); index (`rendition`,
-`display_order`). Models "some lines only in some renditions" (selection) and
-per-recording wording (variant) and timing.
-
-### Collection **(Editorial)**
-| Column | Type | Notes |
-|---|---|---|
-| title | Char(220) | |
-| slug | Slug(240) | **unique** |
-| owner | FK → User | null, SET_NULL |
-| is_curated | Bool | |
-| artwork | FK → media.MediaAsset | null, SET_NULL |
-| share_token | Char(80) | unique, for private/unlisted sharing |
-
-### KalamCredit
-| Column | Type | Notes |
-|---|---|---|
-| kalam | FK → Kalam | CASCADE |
 | person | FK → Person | CASCADE |
-| role | Char(32) `PersonRole` | writer / translator |
+| role | Char(16) `PersonRole` | author on kalam; reciter/voice on rendition |
+| kalam | FK → Kalam | null |
+| rendition | FK → Rendition | null |
 | display_order | PosInt | |
 | note | Char(240) | |
 
-Constraint: unique (`kalam`, `person`, `role`).
+One of `kalam`/`rendition` set. (Replaces the earlier split KalamCredit/
+RenditionCredit.)
 
-### RenditionCredit
+### Collection **(Editorial)** / CollectionItem [built]
+Collection: title, slug (unique), description, owner (FK User, null), is_curated,
+artwork (FK MediaAsset), share_token, renditions (M2M through CollectionItem).
+CollectionItem: collection FK, rendition FK, position; unique (`collection`,
+`rendition`).
+
+### SavedItem (library) [built] / Queue / QueueItem [built]
+SavedItem: user FK, rendition FK; unique (`user`, `rendition`). Queue: user FK,
+name. QueueItem: queue FK, rendition FK, position; unique (`queue`, `rendition`).
+
+### RenditionVote [add]
+rendition FK, user FK; unique (`rendition`, `user`). Lightweight upvote signal.
+
+### PlaybackState [add]
 | Column | Type | Notes |
 |---|---|---|
-| rendition | FK → Rendition | CASCADE |
-| person | FK → Person | CASCADE |
-| role | Char(32) `PersonRole` | reciter / translator / contributor |
-| display_order | PosInt | |
-| note | Char(240) | |
-
-Constraint: unique (`rendition`, `person`, `role`).
-
-### RenditionVote
-| Column | Type | Notes |
-|---|---|---|
-| rendition | FK → Rendition | CASCADE |
 | user | FK → User | CASCADE |
-
-Constraint: unique (`rendition`, `user`).
-
-### Queue / QueueItem
-| Queue | Type | Notes |
-|---|---|---|
-| owner | FK → User | CASCADE |
-| title | Char(120) | |
-
-| QueueItem | Type | Notes |
-|---|---|---|
-| queue | FK → Queue | CASCADE |
 | rendition | FK → Rendition | CASCADE |
-| position | PosInt | unique (`queue`, `position`) |
+| position_ms | PosInt | resume point |
+| last_played_at | DateTime | history / "continue listening" |
+
+Unique (`user`, `rendition`).
 
 ---
 
 ## lyrics
 
-### Language (lane definition, per kalam)
+### RenditionVerseTiming [built, + our variant fields]
 | Column | Type | Notes |
 |---|---|---|
-| kalam | FK → Kalam | CASCADE |
-| code | Char(16) | matches keys in `text_by_language` |
-| name | Char(120) | |
-| role | Char(32) `LyricLanguageRole` | original/translation/transliteration/commentary |
-| direction | Char(8) `LyricDirection` | authoritative for UI/export/overlay |
-| display_order | PosInt | |
-| is_published | Bool | |
+| rendition | FK → catalog.Rendition | CASCADE, related `verse_timings` |
+| verse | FK → catalog.Verse | CASCADE |
+| start_ms | PosInt | per-rendition timing |
+| end_ms | PosInt | null allowed |
+| variant_text_native | Text | **[add]** rendition-specific wording override |
+| variant_translations | JSON(dict) | **[add]** null; per-language override |
 
-Constraint: unique (`kalam`, `code`, `role`).
+Constraint: unique (`rendition`, `verse`). **The existence of a timing row is the
+"line selection"** — a rendition only includes the verses it times, which models
+"some lyrics only appear in specific renditions." Merge target for redundant timing
+passes (median start/end; see `workflows.md` §5).
 
-### UserLyricPreference
-| Column | Type | Notes |
-|---|---|---|
-| user | FK → User | CASCADE |
-| rendition | FK → Rendition | CASCADE |
-| visible_language_codes | JSON(list) | |
-
-Constraint: unique (`user`, `rendition`).
-
-_(KalamLine and RenditionLine may live in this app or `catalog`; documented under
-catalog for cohesion.)_
+### UserLyricPreference [add]
+user FK, rendition FK, `visible_language_codes` (JSON list); unique (`user`,
+`rendition`). Import/export interop (WebVTT/LRC/TTML/JSON) maps to Verse text +
+timings; no separate segment table needed.
 
 ---
 
-## content (wiki prose + publisher)
+## content [add — Markdown/Git preservation layer]
 
 ### Annotation
 | Column | Type | Notes |
 |---|---|---|
-| target_kind | Char(16) `AnnotationTarget` | kalam / line / rendition |
-| kalam | FK → Kalam | null, CASCADE |
-| kalam_line | FK → KalamLine | null, CASCADE |
-| rendition | FK → Rendition | null, CASCADE |
+| target_kind | Char(16) `AnnotationTarget` | kalam / verse / rendition |
+| kalam / verse / rendition | FK | exactly one set |
 | language_code | Char(16) | |
-| body_markdown | Text | prose commentary |
-| review_status | Char(32) `ReviewState` | default draft |
-
-Exactly one of `kalam`/`kalam_line`/`rendition` is set (matches `target_kind`).
-Index (`target_kind`, `kalam`, `rendition`).
+| body_markdown | Text | prose commentary/context |
+| review_status | Char(32) `ReviewState` | |
 
 ### PublishedFile (DB → Git publish log)
 | Column | Type | Notes |
 |---|---|---|
-| entity_type | Char(40) | e.g. kalam, rendition, person, annotation |
-| entity_id | Char(64) | source row id |
-| repo_path | Char(512) | path in the content repo |
-| content_hash | Char(64) | sha256 of the emitted file |
+| entity_type / entity_id | Char | source row |
+| repo_path | Char(512) | path in content repo |
+| content_hash | Char(64) | sha256 of emitted file |
 | commit_sha | Char(64) | blank until committed |
-| status | Char(24) `PublishStatus` | pending/committed/failed |
+| status | Char(24) `PublishStatus` | |
 | published_at | DateTime | null |
 
-Index (`entity_type`, `entity_id`), (`status`, `created_at`). Records the
-approval-time publish of readable Markdown/structured files (see `plan.md` §4).
+Records the approval-time emit of readable Markdown/structured files (`plan.md`
+§4). One-way DB → Git; DB stays the editing source of truth.
 
 ---
 
-## media
+## media [built, + our additions]
 
-### MediaAsset
+### MediaAsset [built]
+kind (`MediaKind`), storage_key (R2), source_url, mime_type, checksum_sha256
+(dup-guard), size_bytes, duration_ms, width/height, processing_status/error/log/
+attempts, source_name, original_filename. **[add]** `metadata` JSON.
+
+### UploadSession [add]
+asset OneToOne, status, presigned `upload_url`, `expires_at`, expected checksum/
+size, completed_at.
+
+### MediaEncoding (built as `MediaRendition` — **rename** to avoid clash with catalog Rendition)
 | Column | Type | Notes |
 |---|---|---|
-| title | Char(240) | |
-| kind | Char(24) `MediaKind` | audio/video/image/document |
-| storage_key | Char(512) | key in R2 |
-| original_filename | Char(255) | |
-| mime_type | Char(120) | |
-| checksum_sha256 | Char(64) | index; duplicate guard |
-| size_bytes | PosBigInt | |
-| duration_ms | PosInt | |
-| width / height | PosInt | null (video/image) |
-| source_url | URL | original URL if fetched |
-| is_master | Bool | default true |
-| status | Char(24) `ProcessingStatus` | |
-| uploaded_by | FK → User | null, SET_NULL |
-| metadata | JSON(dict) | |
+| asset | FK → MediaAsset | related `variants` |
+| container | Char(16) | opus/aac/mp3/mp4/hls |
+| bitrate_kbps / height / codec | — | |
+| storage_key / url | — | |
+| is_streaming | Bool | adaptive/online |
+| is_offline_download | Bool | single progressive file for offline |
+| processing_status | Char(12) `ProcessingStatus` | |
 
-Indexes: (`kind`, `status`), (`checksum_sha256`).
+### MediaDerivative [add] / MediaProcessingJob [add]
+Derivative: asset FK, kind (thumbnail/waveform/poster), storage_key, format,
+metadata, status. ProcessingJob: asset FK, kind (ingest/transcode/thumbnail/
+waveform), status, celery_task_id, log/error, attempts, timestamps.
 
-### UploadSession
-| Column | Type | Notes |
-|---|---|---|
-| asset | OneToOne → MediaAsset | CASCADE |
-| status | Char(24) `UploadSessionStatus` | |
-| upload_url | URL(1200) | presigned |
-| expires_at | DateTime | |
-| expected_checksum_sha256 | Char(64) | |
-| expected_size_bytes | PosBigInt | |
-| completed_at | DateTime | null |
-
-### MediaEncoding _(currently `MediaRendition` — rename to avoid clash with catalog Rendition)_
-| Column | Type | Notes |
-|---|---|---|
-| asset | FK → MediaAsset | CASCADE |
-| format | Char(32) | |
-| codec | Char(80) | |
-| bitrate_kbps | PosInt | null |
-| width / height | PosInt | null |
-| storage_key | Char(512) | |
-| size_bytes | PosBigInt | |
-| status | Char(24) `ProcessingStatus` | |
-| is_playable | Bool | |
-
-### MediaDerivative
-| Column | Type | Notes |
-|---|---|---|
-| asset | FK → MediaAsset | CASCADE |
-| kind | Char(24) | thumbnail / waveform / preview |
-| storage_key | Char(512) | |
-| format | Char(32) | |
-| metadata | JSON(dict) | |
-| status | Char(24) `ProcessingStatus` | |
-
-### MediaProcessingJob
-| Column | Type | Notes |
-|---|---|---|
-| asset | FK → MediaAsset | CASCADE |
-| kind | Char(24) `MediaProcessingJobKind` | |
-| status | Char(24) `ProcessingStatus` | |
-| celery_task_id | Char(120) | |
-| log / error | Text | |
-| attempts | PosInt | |
-| started_at / completed_at | DateTime | null |
-
-### Caption
-| Column | Type | Notes |
-|---|---|---|
-| asset | FK → MediaAsset | null, CASCADE |
-| rendition | FK → catalog.Rendition | null, CASCADE |
-| language_code | Char(16) | |
-| label | Char(120) | |
-| format | Char(32) | default webvtt |
-| storage_key | Char(512) | |
-| is_published | Bool | |
-
-### Chapter
-| Column | Type | Notes |
-|---|---|---|
-| rendition | FK → catalog.Rendition | CASCADE |
-| title | Char(180) | |
-| language_code | Char(16) | |
-| start_ms | PosInt | |
-| end_ms | PosInt | null |
-| notes | Text | |
+### Caption [built] / Chapter [add]
+Caption: asset FK, language_code, fmt (default vtt), storage_key, url. Chapter:
+rendition FK, title, language_code, start_ms, end_ms, notes.
 
 ---
 
-## archive
+## federation [built — formalizes our "mirrors" plan]
 
-### VocabularyTerm
+### MediaMirror
 | Column | Type | Notes |
 |---|---|---|
-| vocabulary | Char(120) | |
-| code | Char(120) | unique (`vocabulary`, `code`) |
-| label | Char(180) | |
-| uri | URL | |
-| description | Text | |
+| name | Char(160) | |
+| slug | Slug(180) | unique |
+| base_url | URL | |
+| kind | Char(12) `MediaMirrorKind` | r2/cdn/github/external/local |
+| is_official / is_active / is_default_enabled / verified | Bool | |
+| carries_all | Bool | true = hosts whole catalogue (like primary R2) |
+| priority | Int | lower = preferred in resolver order |
 
-### Citation
-| Column | Type | Notes |
-|---|---|---|
-| title | Char(260) | |
-| source_type | Char(32) `CitationType` | |
-| author | Char(180) | |
-| published_at | Char(80) | free text |
-| url | URL | |
-| note | Text | |
+**Cloudflare R2 is mirror #1 / primary.** OneDrive/SharePoint and GitHub repos can
+be added as mirrors later (this is the "mirrors setup" we deferred).
 
-### ArchiveRecord **(Editorial)**
-| Column | Type | Notes |
-|---|---|---|
-| title | Char(260) | |
-| slug | Slug(280) | **unique** |
-| summary | Text | |
-| editorial_notes | Text | |
-| contributor_notes | JSON(list) | |
-| kalam | M2M → catalog.Kalam | (was `tracks`) |
-| renditions | M2M → catalog.Rendition | |
-| people | M2M → catalog.Person | |
-| collections | M2M → catalog.Collection | |
-| citations | M2M → Citation | |
-| terms | M2M → VocabularyTerm | |
+### MediaAssetMirror
+asset FK, mirror FK, `available`, `url_override`, `checksum_ok`, `last_checked`;
+unique (`asset`, `mirror`). Availability of one file on a non-`carries_all` mirror.
 
-### ProvenanceRecord
-| Column | Type | Notes |
-|---|---|---|
-| archive_record | FK → ArchiveRecord | null, CASCADE |
-| media_asset | FK → media.MediaAsset | null, CASCADE |
-| event_type | Char(80) | |
-| source_name | Char(180) | |
-| source_url | URL | |
-| source_identifier | Char(180) | |
-| checksum_sha256 | Char(64) | |
-| note | Text | |
-| metadata | JSON(dict) | |
+### ContentSource [built — deferred/optional]
+Registry of catalogue backends (name, slug, base_url, kind, is_official/is_default/
+is_enabled/verified, priority). Designed-for-federation; single official source for
+now. **Not required for our launch** — keep the table, defer multi-source
+aggregation.
 
-### SourceRating
-| Column | Type | Notes |
-|---|---|---|
-| archive_record | FK → ArchiveRecord | CASCADE |
-| kind | Char(24) | editorial / community |
-| value / max_value | PosSmallInt | e.g. 4/5 |
-| rationale | Text | |
-| contributor | FK → User | null, SET_NULL |
+The resolver orders enabled + available mirrors per file into the **playback
+manifest** (`variants[].mirrors[]`).
 
 ---
 
-## community
+## archive [built]
 
-### Submission
-| Column | Type | Notes |
-|---|---|---|
-| submitter | FK → User | null, SET_NULL |
-| title | Char(240) | |
-| voice | Char(180) | reciter (free text) |
-| writer | Char(180) | free text |
-| source_name | Char(240) | |
-| notes | Text | |
-| status | Char(32) `ReviewState` | default draft |
-| target_kalam | FK → catalog.Kalam | null, SET_NULL |
-| target_rendition | FK → catalog.Rendition | null, SET_NULL |
-| citations | M2M → archive.Citation | |
-| media_assets | M2M → media.MediaAsset | |
-| reviewed_by | FK → User | null, SET_NULL |
-| reviewed_at | DateTime | null |
-
-Index (`status`, `created_at`).
-
-### CorrectionDraft
-| Column | Type | Notes |
-|---|---|---|
-| submission | FK → Submission | CASCADE |
-| target_kalam | FK → catalog.Kalam | null, CASCADE |
-| target_rendition | FK → catalog.Rendition | null, CASCADE |
-| target_archive_record | FK → archive.ArchiveRecord | null, CASCADE |
-| fields | JSON(list) | which fields are corrected |
-| proposed_changes | JSON(dict) | |
-| status | Char(32) `ReviewState` | |
-
-### VerificationVote
-| Column | Type | Notes |
-|---|---|---|
-| submission | FK → Submission | CASCADE |
-| voter | FK → User | CASCADE |
-| field | Char(32) `VerificationField` | |
-| vote | Char(16) `VerificationVoteValue` | |
-| note | Text | |
-
-Constraint: unique (`submission`, `voter`, `field`).
-
-### TrackRequest
-| Column | Type | Notes |
-|---|---|---|
-| requester | FK → User | null, SET_NULL |
-| title | Char(240) | |
-| target_kalam | FK → catalog.Kalam | null, SET_NULL |
-| target_rendition | FK → catalog.Rendition | null, SET_NULL |
-| reciter_name | Char(180) | |
-| writer_name | Char(180) | |
-| source_hint | Text | |
-| status | Char(24) `TrackRequestStatus` | |
-| moderator_note | Text | |
-
-Index (`status`, `created_at`).
-
-### TrackRequestVote
-| Column | Type | Notes |
-|---|---|---|
-| request | FK → TrackRequest | CASCADE |
-| user | FK → User | CASCADE |
-
-Constraint: unique (`request`, `user`).
+**Citation** (title, source_type `CitationType`, author, published_at text, url,
+note). **ArchiveRecord** (Editorial): title, slug, summary, editorial_notes,
+contributor_notes JSON; M2M → Kalam, Rendition, Person, Collection, Citation,
+taxonomy.VocabularyTerm. **ProvenanceRecord**: archive_record/media_asset FK (null),
+event_type, source_name/url/identifier, checksum_sha256, note, metadata. **SourceRating**:
+archive_record FK, kind (editorial/community), value/max_value, rationale,
+contributor FK.
 
 ---
 
-## video_generation
+## community [built core, + workflow additions]
+
+### Submission [built]
+author FK, title, `payload` JSON, status (`ReviewState`), reviewer_note. **[add]**
+typed target links: `target_kalam` / `target_rendition` (FK null) and
+`media_assets` M2M for intake attribution.
+
+### CorrectionDraft [add]
+submission FK, target_kalam/target_rendition/target_archive_record (FK null),
+`fields` JSON, `proposed_changes` JSON, status.
+
+### VerificationVote [add]
+submission FK, voter FK, field (`VerificationField`), vote (`VerificationVoteValue`),
+note; unique (`submission`, `voter`, `field`).
+
+### KalamRequest [built] / RequestUpvote [built]
+KalamRequest: requested_by FK, title, details, author_hint, reciter_hint, status
+(`RequestStatus`). **[add]** optional `target_kalam`/`target_rendition` so rendition
+requests reuse it. RequestUpvote: request FK, user FK; unique (`request`, `user`).
+Drives the **needs-work queue**.
+
+---
+
+## video_generation [add — local 5090 worker]
 
 ### VideoGenerationJob
 | Column | Type | Notes |
 |---|---|---|
-| requested_by | FK → User | null, SET_NULL |
-| submission | FK → community.Submission | null, SET_NULL |
-| rendition | FK → catalog.Rendition | null, SET_NULL (was `track`) |
+| requested_by | FK → User | null |
+| submission | FK → community.Submission | null |
+| rendition | FK → catalog.Rendition | null |
 | source_asset | FK → media.MediaAsset | PROTECT |
 | source_mode | Char(32) `VideoGenerationSourceMode` | audio_visualizer / video_overlay |
-| layout_id | Char(80) | default landscape-1 |
-| resolution | Char(16) `VideoGenerationResolution` | default 1080p |
+| layout_id | Char(80) | worker-side layout files |
+| resolution | Char(16) | 720p/1080p/4k |
 | visible_language_codes | JSON(list) | |
-| title / voice / writer | Char | denormalized for the render |
+| title / voice / writer | Char | denormalized for render |
 | status | Char(24) `VideoGenerationStatus` | |
 | celery_task_id | Char(120) | |
-| render_payload | JSON(dict) | contract handed to the worker |
-| log | Text | |
-| failure_reason | Text | |
-| preview_asset | FK → media.MediaAsset | null, SET_NULL |
-| output_asset | FK → media.MediaAsset | null, SET_NULL |
+| render_payload | JSON(dict) | contract for the worker |
+| log / failure_reason | Text | |
+| preview_asset / output_asset | FK → media.MediaAsset | null |
 | cancelled_at / published_at | DateTime | null |
 
-Index (`status`, `created_at`). Segments in `render_payload` derive from
-`RenditionLine` timing + text resolved from `KalamLine` + variant overrides.
+Runs on the **local i9/RTX 5090** Celery worker; segments derive from
+`RenditionVerseTiming` + `Verse` text (with variant overrides). Index (`status`,
+`created_at`).
 
 ---
 
-## audit
+## audit [built] / imports [add]
 
-### AuditLog
-| Column | Type | Notes |
-|---|---|---|
-| actor | FK → User | null, SET_NULL |
-| action | Char(120) | |
-| content_type / object_id | GenericFK | polymorphic target |
-| before / after | JSON(dict) | change snapshot |
-| request_meta | JSON(dict) | |
-
-Indexes: (`action`, `created_at`), (`content_type`, `object_id`). Ordered newest
-first.
-
----
-
-## imports
-
-### ImportBatch
-| Column | Type | Notes |
-|---|---|---|
-| source | Char(32) `ImportSource` | |
-| status | Char(24) `ImportBatchStatus` | |
-| dry_run | Bool | default true |
-| source_label | Char(180) | |
-| payload / summary | JSON(dict) | |
-| error | Text | |
-| created_by | FK → User | null, SET_NULL |
-
-Index (`source`, `status`, `created_at`).
+**AuditLog**: actor FK, action, generic target (content_type + object_id),
+before/after JSON, request_meta JSON. **ImportBatch**: source (`ImportSource`),
+status, dry_run, source_label, payload/summary JSON, error, created_by.
 
 ---
 
 ## Relationship overview
 
 ```
-User 1─* Submission *─1 Kalam / Rendition
-Kalam 1─* KalamLine 1─* RenditionLine *─1 Rendition
-Kalam 1─* Rendition ; Kalam 1─* Language ; Kalam 1─* KalamCredit *─1 Person
-Rendition *─* MediaAsset ; Rendition 1─* RenditionCredit *─1 Person
-MediaAsset 1─* MediaEncoding / MediaDerivative / Caption / MediaProcessingJob
-Rendition 1─1(canonical) VideoGenerationJob 1─1 output MediaAsset
-Annotation ─?→ Kalam | KalamLine | Rendition
-PublishedFile ─→ (any published entity)  [DB→Git log]
-ArchiveRecord *─* Kalam/Rendition/Person/Collection/Citation/VocabularyTerm
+Person ──authored──► Kalam ──has ordered──► Verse (text_native · translit · translations · meaning)
+   │  ▲ credits (unified)      │                       ▲
+   │                           │ has many              │ timed/selected by
+   ▼                           ▼                       │
+ Credit                     Rendition ──RenditionVerseTiming(+variant)─┘
+                       performed by │  └─ media_assets ─► MediaAsset ─► MediaEncoding (opus/aac/mp4/hls)
+                             Person  │            └─ Caption · MediaDerivative(waveform/poster)
+              Kalam tagged ► taxonomy.VocabularyTerm ; described ► ArchiveRecord · Citation · Provenance
+MediaAsset ──availability──► MediaAssetMirror *─1 MediaMirror (R2 primary)   [manifest resolver]
+Annotation ─?→ Kalam | Verse | Rendition        PublishedFile ─→ (published entity)  [DB→Git log]
+User ► SavedItem · Queue/QueueItem · PlaybackState · UserLyricPreference
 ```
 
-## Deltas from the current implementation
+## What we adopted from `master-build-plan.md`
 
-1. **Track → Kalam + Rendition.** The current `catalog.Track` conflates work and
-   recording; it splits into `Kalam` (canonical text/lines/story) and `Rendition`
-   (recording, selection, per-rendition timing).
-2. **Lyrics remodel.** `LyricSet`/`LyricLanguage`/`LyricSegment` become
-   `KalamLine` (canonical text) + `RenditionLine` (per-rendition timing/variants)
-   + `Language` (lane defs). Timing moves from the set to the rendition.
-3. **New `content` app** — `Annotation` (kalam/line/rendition prose) and
-   `PublishedFile` (the approval-time DB→Git Markdown publisher log).
-4. **`MediaRendition` → `MediaEncoding`** (rename) to avoid colliding with the
-   catalog `Rendition`.
-5. **Repointing** — `Submission`, `CorrectionDraft`, `TrackRequest`,
-   `VideoGenerationJob`, `ArchiveRecord`, `Caption`, `Chapter` now reference
-   `Kalam`/`Rendition` instead of `Track`.
-6. **Split credits** — `TrackCredit` → `KalamCredit` (writer/translator) +
-   `RenditionCredit` (reciter/translator); `TrackVote` → `RenditionVote`.
+Verse (with transliteration + per-line `meaning`), the `taxonomy` app + devotional
+vocabularies (genre/silsila/era/theme/region), unified `Credit`, `protection_level`
+per rendition, media variants with `is_streaming`/`is_offline_download` + the
+playback **manifest**, the **federation** mirror registry (R2 primary), and the
+user-facing `SavedItem`/`Queue`/`PlaybackState` models.
 
-These deltas are a schema migration to plan for; the rest matches the built model.
+## What stays ours (kept over the master plan)
+
+The `content` app (`Annotation`, `PublishedFile`) and **publish-on-approval to a
+Git Markdown repo** for preservation; **`RenditionVerseTiming` variant fields** +
+the redundant-pass median-merge workflow; **`MediaEncoding` rename**; the **local
+5090** render worker; and PWA + OpenSubsonic distribution (no native/Expo, no
+native offline store). See `plan.md` §14–15.
