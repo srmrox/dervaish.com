@@ -1,7 +1,8 @@
 import { Bookmark, Edit3, Headphones, Search as SearchIcon, Server, Shield, User, Users } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { atLeast, useSession } from "../lib/session";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import { PlaybackBar } from "./PlaybackBar";
 
 const NAV = [
@@ -16,9 +17,17 @@ export function App() {
   const { isSignedIn, me, role } = useSession();
   const canContribute = atLeast(role, "contributor");
   const canCurate = atLeast(role, "editor");
+  // The track page is a full-height two-column layout that manages its own
+  // scrolling, so it opts out of the centered, max-width, padded content frame.
+  const fullBleed = useLocation().pathname.startsWith("/kalam/");
+  // On mobile the track page is a full-viewport experience (its own header +
+  // bottom sheet), so the side nav steps aside to give it the full width.
+  const isMobile = useMediaQuery("(max-width: 720px)");
+  const hideNav = fullBleed && isMobile;
 
   return (
     <div style={{ display: "flex", height: "100%" }}>
+      {!hideNav && (
       <nav
         style={{
           width: 220,
@@ -58,9 +67,16 @@ export function App() {
           {isSignedIn ? (me?.display_name || "Account") : "Sign in"}
         </NavLink>
       </nav>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
-        <main style={{ flex: 1, overflow: "auto", maxWidth: 960, width: "100%", margin: "0 auto", padding: "var(--s-5)" }}>
+        <main
+          style={
+            fullBleed
+              ? { flex: 1, minHeight: 0, overflow: "hidden" }
+              : { flex: 1, overflow: "auto", maxWidth: 960, width: "100%", margin: "0 auto", padding: "var(--s-5)" }
+          }
+        >
           <Outlet />
         </main>
         <PlaybackBar />
