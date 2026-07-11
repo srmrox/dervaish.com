@@ -1,9 +1,15 @@
 name: CI
 
+# Auto-triggers (push / pull_request) are disabled: GitHub Actions cannot run on
+# this account while it is billing-locked, so every push otherwise registers a
+# failing check that never actually started. Restore the block below once Actions
+# is available again:
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   api:
