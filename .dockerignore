@@ -1,0 +1,19 @@
+# Keep the Docker build context small. node_modules is reinstalled in-image;
+# mediafiles/ is 114 MB of local samples (served from GitHub/R2 in prod).
+node_modules
+**/node_modules
+dist
+**/dist
+mediafiles/
+*.db
+*.db-wal
+*.db-shm
+.git
+.github
+archive/
+docs/
+**/.env
+**/.env.*
+!**/.env.example
+npm-debug.log*
+.DS_Store
