@@ -1,0 +1,254 @@
+{
+  "meta": {
+    "repo": "dervaish.com",
+    "analyzed_at": "2026-07-11T00:00:00+05:00",
+    "commit": "081a07cc69de",
+    "title": "Dervaish — system map",
+    "notes": "Preservation-focused devotional-media archive + listening platform. Mid-migration: the Django/DRF/Celery backend is archived; the active backend is apps/api — Node standard library only (node:http + node:sqlite), currently a Stage-1 scaffold. Dashed items are inferred or planned and need confirmation."
+  },
+  "groups": [
+    { "id": "client", "label": "Clients" },
+    { "id": "app", "label": "Application" },
+    { "id": "data", "label": "Data" },
+    { "id": "external", "label": "External" },
+    { "id": "infra", "label": "Infra" }
+  ],
+  "nodes": [
+    {
+      "id": "browser",
+      "label": "Browser (PWA)",
+      "kind": "client",
+      "subtype": "browser",
+      "group": "client",
+      "tech": "Web browser",
+      "purpose": "A listener's browser running the Dervaish web app (installable PWA; old caching service worker is kill-switched).",
+      "confidence": "declared",
+      "evidence": [
+        "apps/platform-web/index.html:1",
+        "apps/platform-web/public/manifest.webmanifest:1",
+        "apps/platform-web/public/sw.js:1"
+      ]
+    },
+    {
+      "id": "subsonic-clients",
+      "label": "OpenSubsonic apps (planned)",
+      "kind": "client",
+      "subtype": "mobile",
+      "group": "client",
+      "tech": "DSub, Symfonium, play:Sub…",
+      "purpose": "Existing Subsonic ecosystem players — the /rest/* control plane is designed and proxied in dev, but the server routes are deferred to Stage 7.",
+      "confidence": "inferred",
+      "evidence": [
+        "docs/node/00-overview.md:65",
+        "apps/platform-web/vite.config.ts:12"
+      ]
+    },
+    {
+      "id": "platform-web",
+      "label": "platform-web",
+      "kind": "component",
+      "subtype": "frontend",
+      "group": "app",
+      "tech": "React 19 + Vite 6 + TanStack Query + react-router 7",
+      "purpose": "The listening + preservation UI (~24 screens: player, wiki, studio, community, admin). API-only — no bundled mock data.",
+      "path": "apps/platform-web",
+      "health": { "type": "http", "target": "http://localhost:5174/", "expect_status": 200 },
+      "confidence": "declared",
+      "evidence": [
+        "apps/platform-web/package.json:2",
+        "package.json:5",
+        "apps/platform-web/vite.config.ts:9"
+      ]
+    },
+    {
+      "id": "api",
+      "label": "api (Node backend)",
+      "kind": "component",
+      "subtype": "api",
+      "group": "app",
+      "tech": "Node ≥22.5, node:http + node:sqlite, zero runtime deps",
+      "purpose": "Headless backend on :8000 — data plane /api/v1/*, media plane /media/* (Stage 2), Subsonic /rest/* (Stage 7). Today a Stage-1 scaffold serving /healthz and /api/v1 only.",
+      "path": "apps/api",
+      "health": { "type": "http", "target": "http://localhost:8000/healthz", "expect_status": 200 },
+      "confidence": "declared",
+      "evidence": [
+        "apps/api/package.json:2",
+        "apps/api/src/server.ts:23",
+        "apps/api/src/server.ts:28",
+        "apps/api/.env.example:3"
+      ]
+    },
+    {
+      "id": "sqlite",
+      "label": "SQLite (dervaish.db)",
+      "kind": "datastore",
+      "subtype": "sql",
+      "group": "data",
+      "tech": "node:sqlite (DatabaseSync), WAL",
+      "purpose": "The catalogue database — raw SQL, no ORM. Schema is applied idempotently on boot; currently a placeholder until the Stage-3 data model lands.",
+      "path": "apps/api/db",
+      "confidence": "declared",
+      "evidence": [
+        "apps/api/src/db.ts:8",
+        "apps/api/.env.example:10",
+        "apps/api/db/schema.sql:7"
+      ]
+    },
+    {
+      "id": "mediafiles",
+      "label": "mediafiles/ (MEDIA_ROOT)",
+      "kind": "datastore",
+      "subtype": "object_storage",
+      "group": "data",
+      "tech": "Local disk",
+      "purpose": "Repo-root media store (originals, renditions, captions…) served as the 'local' mirror via GET /media/* with HTTP Range support.",
+      "path": "mediafiles",
+      "confidence": "declared",
+      "evidence": [
+        "apps/api/.env.example:7",
+        "apps/api/src/env.ts:15",
+        "docs/node/media-serving.md:1"
+      ]
+    },
+    {
+      "id": "media-mirrors",
+      "label": "Remote media mirrors",
+      "kind": "external_service",
+      "subtype": "storage",
+      "group": "external",
+      "tech": "Cloudflare R2 / CDN, GitHub raw",
+      "purpose": "Federated media hosts from the MediaMirror registry. Design + client resolver exist; R2 is 'config present, not provisioned' — only the local mirror is seeded today.",
+      "confidence": "inferred",
+      "evidence": [
+        "docs/node/federation-mirrors.md:10",
+        "docs/STATUS.md:79",
+        "apps/platform-web/src/lib/mirrors.ts:73"
+      ]
+    },
+    {
+      "id": "postgres",
+      "label": "PostgreSQL 16",
+      "kind": "datastore",
+      "subtype": "sql",
+      "group": "data",
+      "tech": "postgres:16 (docker-compose)",
+      "purpose": "Declared in docker-compose for the archived Django backend. Nothing in apps/api connects to it — likely stale after the Node/SQLite migration.",
+      "health": { "type": "tcp", "target": "localhost:5432" },
+      "confidence": "declared",
+      "evidence": ["docker-compose.yml:2", "docker-compose.yml:3"]
+    },
+    {
+      "id": "redis",
+      "label": "Redis 7",
+      "kind": "datastore",
+      "subtype": "cache",
+      "group": "data",
+      "tech": "redis:7 (docker-compose)",
+      "purpose": "Declared in docker-compose as the Celery broker for the archived Django backend. No active code references it — likely stale.",
+      "health": { "type": "tcp", "target": "localhost:6379" },
+      "confidence": "declared",
+      "evidence": ["docker-compose.yml:13", "docker-compose.yml:14"]
+    },
+    {
+      "id": "minio",
+      "label": "MinIO",
+      "kind": "datastore",
+      "subtype": "object_storage",
+      "group": "data",
+      "tech": "minio/minio (docker-compose)",
+      "purpose": "S3-compatible store declared in docker-compose for the archived Django backend. The Node backend serves media from local disk instead — likely stale.",
+      "health": { "type": "http", "target": "http://localhost:9000/minio/health/live", "expect_status": 200 },
+      "confidence": "declared",
+      "evidence": ["docker-compose.yml:18", "docker-compose.yml:19"]
+    },
+    {
+      "id": "github-actions",
+      "label": "GitHub Actions CI",
+      "kind": "external_service",
+      "subtype": "ci",
+      "group": "infra",
+      "tech": "GitHub Actions",
+      "purpose": "CI runs Django tests in backend/ and an Expo web export in app/ — both directories no longer exist in the workspace, so the workflow appears stale/broken.",
+      "confidence": "declared",
+      "evidence": [
+        ".github/workflows/ci.yml:13",
+        ".github/workflows/ci.yml:54",
+        ".github/workflows/ci.yml:67"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "browser",
+      "to": "platform-web",
+      "type": "serves",
+      "transport": "http",
+      "label": "app shell + PWA",
+      "confidence": "declared",
+      "evidence": ["apps/platform-web/vite.config.ts:9", "apps/platform-web/index.html:1"]
+    },
+    {
+      "from": "platform-web",
+      "to": "api",
+      "type": "calls",
+      "transport": "http",
+      "label": "REST /api/v1 (token auth); /api,/media,/rest,/healthz proxied in dev",
+      "confidence": "declared",
+      "evidence": [
+        "apps/platform-web/src/lib/api.ts:39",
+        "apps/platform-web/vite.config.ts:11"
+      ]
+    },
+    {
+      "from": "subsonic-clients",
+      "to": "api",
+      "type": "calls",
+      "transport": "http",
+      "label": "/rest/* OpenSubsonic — deferred (Stage 7)",
+      "confidence": "inferred",
+      "evidence": ["docs/node/00-overview.md:65", "apps/platform-web/vite.config.ts:12"]
+    },
+    {
+      "from": "api",
+      "to": "sqlite",
+      "type": "queries",
+      "transport": "sql",
+      "label": "raw SQL, prepared statements",
+      "confidence": "declared",
+      "evidence": ["apps/api/src/db.ts:8", "apps/api/.env.example:10"]
+    },
+    {
+      "from": "api",
+      "to": "mediafiles",
+      "type": "reads",
+      "transport": "filesystem",
+      "label": "GET /media/* → Range-streamed from MEDIA_ROOT (Stage 2, planned)",
+      "confidence": "inferred",
+      "evidence": [
+        "apps/api/.env.example:7",
+        "apps/api/src/env.ts:23",
+        "docs/node/media-serving.md:1"
+      ]
+    },
+    {
+      "from": "platform-web",
+      "to": "media-mirrors",
+      "type": "calls",
+      "transport": "https",
+      "label": "streams audio/video from user-enabled mirrors (resolveVariantUrl)",
+      "confidence": "inferred",
+      "evidence": [
+        "apps/platform-web/src/lib/mirrors.ts:73",
+        "apps/platform-web/src/lib/player.tsx:24"
+      ]
+    }
+  ],
+  "open_questions": [
+    "docker-compose.yml declares Postgres 16, Redis 7, and MinIO — the stack of the archived Django backend. apps/api uses node:sqlite + local disk only (docs/node/architecture.md rules out Redis/Postgres by default). Is docker-compose.yml stale, or is Postgres/MinIO still the intended production path?",
+    ".github/workflows/ci.yml runs its jobs in `backend/` (Django + pip) and `app/` (Expo export) — `backend/` is empty and `app/` doesn't exist. CI looks broken/stale since the Node migration; no workflow builds apps/api or apps/platform-web.",
+    "README.md still documents `apps/backend` (Django/DRF/Celery) as the active implementation — apps/api's own README says it replaces the archived Django backend. README appears out of date.",
+    "apps/api is a Stage-1 scaffold: only /healthz and /api/v1 exist; db/schema.sql is a placeholder (schema_marker). The /media/* Range server, real schema/seed, and read/auth/admin routes are Stages 2–6 — edges marked 'planned' show the documented target, not running code.",
+    "Remote media mirrors (Cloudflare R2/CDN, GitHub raw) exist in the federation design and the client resolver, but STATUS.md says R2 is 'config present, not provisioned' and the seed registers only the local mirror. Are any remote mirrors live?",
+    "The frontend api client still speaks DRF conventions (trailing slashes, `Token` auth, DRF token keys) against the new Node API — contract compatibility is asserted in docs/node/api-contract.md but not yet implemented server-side."
+  ]
+}

@@ -8,3 +8,17 @@ coverage
 *.log
 .DS_Store
 
+# local media samples — large binaries live in the dervaish-media repo, not here
+mediafiles/
+
+# local sqlite dev databases
+*.db
+*.db-wal
+*.db-shm
+
+# editor cruft
+docs/.obsidian/
+
+
+# local holding area for removed folders (delete in Explorer)
+.attic/

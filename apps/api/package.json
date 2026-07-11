@@ -1,0 +1,22 @@
+{
+  "name": "@dervaish/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Dervaish Node backend — standard library only (node:http + node:sqlite). Replaces the archived Django backend.",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev:build": "tsc -p tsconfig.json --watch",
+    "dev": "node --experimental-sqlite --env-file=.env --watch dist/server.js",
+    "start": "node --experimental-sqlite --env-file=.env dist/server.js",
+    "seed": "node --experimental-sqlite --env-file=.env dist/seed.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-sqlite"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}

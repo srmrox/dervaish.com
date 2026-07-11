@@ -237,18 +237,51 @@ are batch-tracked, dry-runnable, land in draft.
 
 ## 17. Roadmap
 
-- **Phase 0 — Prove the pipe.** Local docker-compose (Postgres/Redis/MinIO), the
-  local 5090 worker draining a real `audio_visualizer` render to R2. Resolve rights
-  default (`protection_level`).
-- **Phase 1 — Backend hardening + Studio loop.** Auth + role permissions, `/me/*`,
-  search; the intake → transcribe → time → translate/meaning → submit → approve
-  loop; wire the PWA to the live API.
-- **Phase 1b — Content publisher + Wiki/Reader.** DB→Markdown on approval; the read
-  surface (story, author pages, per-verse meaning/annotations).
-- **Phase 2 — Media pipeline + player.** Upload/transcode/manifest; PWA player with
-  background audio, queue, resume; video overlay rendering.
-- **Phase 3 — Community + distribution.** Verification votes, requests, corrections
-  in the UI; mirror registry surfaced; Navidrome trial → OpenSubsonic endpoints.
+**Frontend of record:** the Vite + React PWA at **`apps/platform-web`**. The Expo
+`app/` is retired; the old two-stack `apps/backend`, the empty `web/`, and the empty
+`workers/` were removed in the Phase 1 cleanup (held in `.attic/` for manual delete).
+Two pillars remain: **`backend/`** (Django) + **`apps/platform-web`** (web).
+
+- **Phase 1 — Repo cleanup + web foundation. _(done)_** Repaired the git index;
+  removed dead folders; `platform-web` refactored into a real skeleton — design-
+  system CSS tokens (with real focus/hover/pressed/error states + micro-interactions
+  per the UI/UX notes), typed API client + TanStack Query hooks, token-auth session,
+  UI kit, path-based router, app shell + sticky playback bar, PWA manifest.
+- **Phase 2 — Read surface. _(built; verify against `npm run dev`)_** Screens wired
+  to the live backend: Listen, Search, Kalam, Rendition/Companion, Person,
+  Collection, Library, Queues, Account, Auth — using the real read + auth + `/me`
+  endpoints and the audio player. _Remaining polish:_ PWA icons, wire library/queue
+  mutations, and adjust once run in the browser._
+- **Phase 3 — Contribution backend + Studio. _(built)_** Added `community`
+  endpoints reusing existing models (no migration): `POST/GET /submissions/`
+  (owner-scoped; `payload.kind` = source/transcription/timing/translation/context)
+  and `/community/requests/` (+ `upvote`). Wired the Studio surface in
+  `platform-web`: role-gated nav, dashboard, source intake, the transcription /
+  **timing** (real tap-to-time against the audio player) / translation / context
+  editors, my-submissions, and community requests — each posting a real
+  `Submission`. _Deferred to later phases:_ the dedicated `content` app + direct
+  canonical writes + verification voting land with admin merge (Phase 4) and the
+  publisher (Phase 5); admins interpret `payload` on approval.
+- **Phase 4 — Admin & curation. _(built)_** `IsEditor` permission +
+  `apply_submission` service (transcription→`Verse`, timing→`RenditionVerseTiming`,
+  translation→`Verse.translations`) + `/admin/review/submissions/` viewset
+  (`review`/`apply`); editor-gated Admin nav, dashboard, and review/approve UI. No
+  migration.
+- **Phase 5 — Render & publish. _(scaffolded — needs `makemigrations`)_** New
+  `content` app (`Annotation`, `PublishedFile` + DB→Markdown publisher writing to
+  `CONTENT_REPO_DIR`; git commit still external) and `video_generation` app
+  (`VideoGenerationJob` + `build_render_payload` + `render_video_job` task that
+  hands off to the **local 5090 worker**). Endpoints `/annotations/`,
+  `/admin/published/` (+`publish-kalam`), `/admin/renders/`; admin render + publish
+  screens. **Run:** `makemigrations content video_generation && migrate`.
+- **Phase 6 — Distribution & polish. _(partial)_** Minimal **OpenSubsonic** surface
+  at `/rest/` (`ping`, `getLicense`, `getLyricsBySongId` from
+  `RenditionVerseTiming`+`Verse`, `stream` redirect); **PWA** service worker +
+  registration; `useDocumentTitle` for basic SEO; rewritten Playwright smoke test.
+  _Deferred:_ full SSR/pre-render, offline downloads, Subsonic auth + full method
+  set, a11y/RTL audit.
+
+_Earlier "prove the pipe" render-worker milestone folds into Phase 5._
 
 ## 18. Decisions — absorbed vs. kept
 
