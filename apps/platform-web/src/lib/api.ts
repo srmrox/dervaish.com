@@ -1,9 +1,17 @@
 // Typed fetch client against the Django v1 API. Base URL from env; token auth
 // persisted in localStorage. All requests go through `api()`.
 
-// Empty by default → requests are same-origin ("/api/v1/…") and go through the
-// Vite dev proxy (see vite.config.ts). Set VITE_DERVAISH_API_BASE_URL for prod.
-const API_BASE_URL = (import.meta.env.VITE_DERVAISH_API_BASE_URL ?? "").replace(/\/$/, "");
+// API base URL resolution, most specific first:
+//   1. window.__DERVAISH_API_BASE_URL__ — injected at container start from the
+//      DERVAISH_API_BASE_URL env var (see public/env.js + the web Docker entrypoint),
+//      so it can be changed on a deployed instance without rebuilding.
+//   2. VITE_DERVAISH_API_BASE_URL — baked at build time.
+//   3. "" — same-origin ("/api/v1/…"), via the Vite dev proxy (see vite.config.ts).
+const runtimeBase =
+  typeof window !== "undefined"
+    ? (window as unknown as { __DERVAISH_API_BASE_URL__?: string }).__DERVAISH_API_BASE_URL__
+    : undefined;
+const API_BASE_URL = (runtimeBase || import.meta.env.VITE_DERVAISH_API_BASE_URL || "").replace(/\/$/, "");
 
 const TOKEN_KEY = "dervaish.token";
 

@@ -8,6 +8,9 @@
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Dervaish</title>
+    <!-- Runtime config: overwritten at container start from DERVAISH_API_BASE_URL.
+         Loaded before the app so window.__DERVAISH_API_BASE_URL__ is set (see api.ts). -->
+    <script src="/env.js"></script>
   </head>
   <body>
     <div id="root"></div>

@@ -12,6 +12,10 @@ import { hashPassword } from "./auth.js";
 const now = () => new Date().toISOString();
 const LOCAL_MODE = (process.env.DERVAISH_LOCAL_MODE ?? "true").toLowerCase() === "true";
 const LOCAL_BASE = process.env.LOCAL_MEDIA_BASE_URL ?? "/media/";
+// Where deployed media actually lives (overridable). Defaults: the dervaish-media
+// GitHub repo (raw) and the R2 mirror.
+const GITHUB_BASE = process.env.DERVAISH_GITHUB_BASE_URL ?? "https://raw.githubusercontent.com/srmrox/dervaish-media/main/";
+const R2_BASE = process.env.DERVAISH_R2_BASE_URL ?? "https://media.dervaish.com/";
 
 function insert(sql: string, ...params: unknown[]): number {
   return Number(db.prepare(sql).run(...(params as never[])).lastInsertRowid);
@@ -128,10 +132,12 @@ try {
   // ---- verses (from the bundled lyrics.json: [native, en, ur, translit] + timing) ----
   // Kept in time order (refrains included) so the Companion can highlight the
   // active cue as playback advances — each verse carries its start/end in ms.
-  const lyricsPath = resolve(env.MEDIA_ROOT_ABS, "samples/tanam-farsooda/lyrics.json");
+  // Committed alongside the schema so verses seed even where no local media is
+  // present (e.g. the Coolify server). ../db/seed resolves relative to dist/seed.js.
+  const lyricsUrl = new URL("../db/seed/tanam-farsooda.lyrics.json", import.meta.url);
   let cues: { native: string; en: string; ur: string; translit: string; start: number; end: number }[] = [];
   try {
-    const raw = JSON.parse(readFileSync(lyricsPath, "utf8")) as {
+    const raw = JSON.parse(readFileSync(lyricsUrl, "utf8")) as {
       lyrics: { lyric: string[]; start: number; end: number }[];
     };
     cues = raw.lyrics
@@ -164,14 +170,16 @@ try {
       slug, name, base_url, kind,
       opts.official ?? 0, opts.active ?? 1, opts.def ?? 1, opts.verified ?? 0, opts.carries ?? 0, opts.priority ?? 100,
     );
+  // On a deployed server there is no local media, so the local mirror is only a
+  // default in local mode; production playback resolves to the GitHub/R2 mirrors.
   const mLocal = mirror("local", "This device (local)", LOCAL_BASE, "local", {
-    official: 0, active: 1, def: 1, verified: 1, carries: LOCAL_MODE ? 1 : 0, priority: 0,
+    official: 0, active: 1, def: LOCAL_MODE ? 1 : 0, verified: 1, carries: LOCAL_MODE ? 1 : 0, priority: 0,
   });
-  mirror("dervaish-r2", "Dervaish (official mirror)", "https://media.dervaish.com/", "r2", {
+  const mGithub = mirror("github-media", "GitHub (dervaish-media)", GITHUB_BASE, "github", {
     official: 1, active: 1, def: 1, verified: 1, carries: 1, priority: 10,
   });
-  mirror("github-media", "GitHub (dervaish-media)", "https://raw.githubusercontent.com/srmrox/dervaish-media/main/", "github", {
-    official: 1, active: 1, def: 0, verified: 1, carries: 0, priority: 20,
+  const mR2 = mirror("dervaish-r2", "Dervaish (official mirror)", R2_BASE, "r2", {
+    official: 1, active: 1, def: 1, verified: 1, carries: 1, priority: 20,
   });
 
   // content sources (federation directory)
@@ -191,14 +199,11 @@ try {
   const assetIds: number[] = [];
   for (const s of specs) {
     const storageKey = `${SAMPLES}/${s.file}`;
-    const size = safeStatSize(resolve(env.MEDIA_ROOT_ABS, storageKey));
-    if (size === null) {
-      console.warn(`[seed] sample missing, skipping: ${storageKey}`);
-      continue;
-    }
+    // size only matters for local /media serving; 0 when the file isn't on disk.
+    const size = safeStatSize(resolve(env.MEDIA_ROOT_ABS, storageKey)) ?? 0;
     const assetId = insert(
       `INSERT INTO media_asset (storage_key,kind,mime_type,original_filename,size_bytes,processing_status,source_name,height)
-       VALUES (?,?,?,?,?, 'ready','local sample', ?)`,
+       VALUES (?,?,?,?,?, 'ready','sample', ?)`,
       storageKey, s.kind, s.mime, s.file, size, s.height,
     );
     assetIds.push(assetId);
@@ -207,7 +212,11 @@ try {
        VALUES (?,?,?,?,?,?,1,?)`,
       assetId, storageKey, s.container, "", null, s.height, s.offline,
     );
-    run("INSERT INTO media_asset_mirror (asset_id,mirror_id,available) VALUES (?,?,1)", assetId, mLocal);
+    // Available on every registered mirror; the client/resolver picks by priority
+    // and the reader's enabled-mirror prefs (local in local mode, else GitHub/R2).
+    for (const m of [mLocal, mGithub, mR2]) {
+      run("INSERT INTO media_asset_mirror (asset_id,mirror_id,available) VALUES (?,?,1)", assetId, m);
+    }
   }
 
   // ---- rendition (one clean public rendition of Tanam, credited to the reciter) ----
