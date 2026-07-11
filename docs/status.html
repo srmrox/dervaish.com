@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dervaish — Migration Roadmap</title>
+<style>
+  :root{
+    --bg:#0e1113; --nav:#12161a; --surface:#171c21; --surface2:#1d242b; --surface3:#252e36;
+    --line:#262f37; --line2:#333e47; --text:#eef2f4; --muted:#a7b1ba; --soft:#7b8893;
+    --green:#3fae6b; --blue:#5aa6e8; --gold:#d6a64a; --orange:#d8a23b; --danger:#e2574c;
+    --violet:#9d8cf0;
+    --r:12px; --rc:8px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.5;
+       letter-spacing:-.005em;padding:32px 20px 80px}
+  .wrap{max-width:1400px;margin:0 auto}
+  h1{font-size:26px;letter-spacing:-.02em;margin:0 0 4px}
+  h2{font-size:17px;letter-spacing:-.01em;margin:34px 0 12px}
+  .sub{color:var(--muted);font-size:13px;margin:0}
+  .muted{color:var(--muted)} .soft{color:var(--soft)} .tiny{font-size:11px}
+  a{color:var(--blue);text-decoration:none} a:hover{text-decoration:underline}
+  code{background:var(--surface3);padding:1px 6px;border-radius:5px;font-size:12px}
+
+  .banner{margin-top:14px;background:var(--surface);border:1px solid var(--line2);border-left:3px solid var(--gold);
+          border-radius:var(--rc);padding:12px 14px;color:var(--muted);font-size:13px}
+  .banner b{color:var(--text)}
+  .warnmut{color:var(--gold)}
+
+  /* progress */
+  .progress{margin-top:16px;display:flex;height:12px;border-radius:999px;overflow:hidden;border:1px solid var(--line)}
+  .progress span{height:100%}
+  .totals{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px}
+  .totals .t{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+  /* config bar */
+  .testbar{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;background:var(--surface);
+           border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+  .fld{display:flex;flex-direction:column;gap:5px}
+  .fld label{font-size:11px;color:var(--soft);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  .fld input{background:var(--bg);border:1px solid var(--line2);border-radius:var(--rc);color:var(--text);
+             padding:7px 10px;font-size:13px;font-family:inherit;min-width:180px}
+  .btn{background:var(--surface3);border:1px solid var(--line2);color:var(--text);border-radius:var(--rc);
+       padding:8px 15px;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s}
+  .btn:hover{background:var(--surface2)}
+  .btn.primary{background:var(--blue);border-color:var(--blue);color:#06121d}
+  .btn.primary:hover{filter:brightness(1.08);background:var(--blue)}
+  .btn.good{background:var(--green);border-color:var(--green);color:#04140b}
+  .btn.sm{padding:3px 11px;font-size:12px}
+  .btn:disabled{opacity:.4;cursor:default}
+  .tsum{display:flex;gap:16px;flex-wrap:wrap;margin:12px 2px 0;font-size:12px;color:var(--muted)}
+  .tsum b{font-variant-numeric:tabular-nums}
+
+  /* stage filter */
+  .filters{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 6px}
+  .chip{display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;border:1px solid var(--line2);
+        background:transparent;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;user-select:none;
+        transition:background .12s,border-color .12s,color .12s}
+  .chip:hover{background:var(--surface2)}
+  .chip.active{background:var(--surface3);color:var(--text);border-color:var(--line2)}
+
+  /* kanban board */
+  .board{overflow-x:auto}
+  .colhead{display:grid;grid-template-columns:repeat(4,minmax(190px,1fr));gap:12px;position:sticky;top:0;z-index:2;
+           padding:6px 0;background:var(--bg)}
+  .colhead-cell{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);
+                padding:6px 10px;border-bottom:2px solid var(--line2)}
+  .colhead-cell.c-todo{border-color:var(--soft)}
+  .colhead-cell.c-auto{border-color:var(--blue)}
+  .colhead-cell.c-manual{border-color:var(--violet)}
+  .colhead-cell.c-done{border-color:var(--green)}
+  .lane{margin-top:14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden}
+  .lane-head{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--nav);border-bottom:1px solid var(--line)}
+  .lane-title{font-weight:700;font-size:14px}
+  .lane-mini{font-size:11px;color:var(--soft);font-variant-numeric:tabular-nums}
+  .lane-head .btn{margin-left:auto}
+  .kgrid{display:grid;grid-template-columns:repeat(4,minmax(190px,1fr));gap:12px;padding:12px}
+  .kcol{display:flex;flex-direction:column;gap:10px;min-height:24px;border-right:1px dashed var(--line);padding-right:12px}
+  .kcol:last-child{border-right:none;padding-right:0}
+
+  /* cards */
+  .kcard{background:var(--surface2);border:1px solid var(--line2);border-left:3px solid var(--soft);
+         border-radius:var(--rc);padding:10px 11px;display:flex;flex-direction:column;gap:7px}
+  .kcard.s-auto{border-left-color:var(--blue)}
+  .kcard.s-manual{border-left-color:var(--violet)}
+  .kcard.s-done{border-left-color:var(--green)}
+  .kcard.s-fail{border-left-color:var(--danger)}
+  .kc-top{display:flex;align-items:baseline;gap:7px}
+  .verb{color:var(--soft);font-weight:700;font-size:10px;letter-spacing:.03em;flex:none}
+  .kc-title{font-size:13px;font-weight:600;line-height:1.3}
+  .mutflag{color:var(--gold);cursor:help}
+  .kc-ep{background:var(--bg);border:1px solid var(--line);color:var(--muted);font-size:11px;
+         padding:3px 7px;border-radius:5px;word-break:break-all;line-height:1.35}
+  .kc-auto{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;font-weight:600}
+  .kc-manual{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .mlbl{font-size:10px;color:var(--soft);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-right:2px}
+  .mbtn{border:1px solid var(--line2);background:transparent;color:var(--muted);border-radius:999px;
+        padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer}
+  .mbtn:hover{background:var(--surface3)}
+  .mbtn.pass.active{background:var(--green);border-color:var(--green);color:#04140b}
+  .mbtn.fail.active{background:var(--danger);border-color:var(--danger);color:#180404}
+  .mbtn.na.active{background:var(--surface3);border-color:var(--line2);color:var(--text)}
+  .kc-note-toggle{align-self:flex-start;background:none;border:none;color:var(--soft);font-size:11px;
+                  cursor:pointer;padding:0;font-weight:600}
+  .kc-note-toggle:hover{color:var(--muted)}
+  .kc-notes{width:100%;min-height:52px;resize:vertical;background:var(--bg);border:1px solid var(--line2);
+            border-radius:6px;color:var(--text);font-family:inherit;font-size:12px;padding:7px 8px}
+  .kc-notes.hidden{display:none}
+  .r-pass{color:var(--green)} .r-fail{color:var(--danger)} .r-run{color:var(--muted)}
+  .r-skip{color:var(--gold)} .r-idle{color:var(--soft)} .r-info{color:var(--soft)}
+  .emptycol{color:var(--line2);font-size:11px;font-style:italic;padding:2px 0}
+
+  /* reference tables */
+  table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
+        border-radius:var(--r);overflow:hidden;margin-top:10px}
+  th,td{text-align:left;padding:9px 14px;font-size:13px;border-top:1px solid var(--line);vertical-align:top}
+  th{background:var(--nav);color:var(--soft);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-top:none}
+  tbody tr:hover{background:var(--surface2)}
+  td.area{font-weight:600;white-space:nowrap}
+  td.st{white-space:nowrap;width:1%}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;
+        border:1px solid currentColor;white-space:nowrap}
+  ul.plain{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:13px}
+  ul.plain li{margin:3px 0}
+  .foot{margin-top:34px;color:var(--soft);font-size:12px}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--surface3);
+         border:1px solid var(--line2);color:var(--text);padding:10px 16px;border-radius:999px;font-size:13px;
+         box-shadow:0 8px 24px rgba(0,0,0,.4);opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Dervaish — Migration Roadmap</h1>
+  <p class="sub">Django → Node/TypeScript backend · kanban of every migration stage, verified two ways ·
+     last updated <b id="updated"></b> · mirrors <code>docs/STATUS.md</code></p>
+
+  <div class="banner" style="border-left-color:var(--violet)">
+    <b>Backend → Node migration.</b> Old Django/DRF backend archived to
+    <code>archive/backend-django/</code> (reference spec). New service scaffolded at <code>apps/api/</code>
+    (node:http + node:sqlite, zero deps). Each card below is one check with an <b>automated</b> run and a <b>manual</b> sign-off;
+    cards flow left→right as they’re verified. Point the config at your running Node server, then
+    <b>Run all</b>. Manual notes persist locally and export to <code>manual-checks.md</code>.
+  </div>
+
+  <div class="testbar">
+    <div class="fld"><label>Node base URL</label><input id="cfgBase" placeholder="http://localhost:8000"></div>
+    <div class="fld"><label>Login username</label><input id="cfgUser" placeholder="demo"></div>
+    <div class="fld"><label>Login password</label><input id="cfgPass" type="password" placeholder="••••••"></div>
+    <button class="btn primary" id="runAll">Run all automated</button>
+    <button class="btn" id="resetAuto">Reset automated</button>
+    <button class="btn good" id="saveMd">Save notes → .md</button>
+    <button class="btn" id="downloadMd">Download .md</button>
+  </div>
+  <div class="tsum" id="tsum"></div>
+
+  <div class="progress" id="progress"></div>
+  <div class="totals" id="totals"></div>
+
+  <div class="filters" id="stageFilter"></div>
+  <div class="board" id="board"></div>
+
+  <h2>Reference — current build (context)</h2>
+  <div id="sections"></div>
+
+  <h2>Deferred / not started</h2>
+  <ul class="plain" id="deferred"></ul>
+
+  <p class="foot">Automated checks call the Node server live. Manual checks + notes are yours to fill in and are
+     saved to <code>manual-checks.md</code> (Chrome/Edge write the file directly; other browsers download a copy).
+     Flip a manual check to <b>Pass</b> only after you’ve actually confirmed it.</p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================= config / editable ============================= */
+const UPDATED = "6 Jul 2026";
+const AP = "/api/v1";                                  // versioned API prefix
+const AUDIO = "/media/samples/tanam-farsooda/audio.mp3";
+const VIDEO = "/media/samples/tanam-farsooda/landscape-1080p.mp4";
+
+// reference tables (informational only — the kanban above is the live surface)
+const S = {
+  done:{label:"Done & verified",color:"var(--green)"}, built:{label:"Built — needs verify",color:"var(--blue)"},
+  pending:{label:"Pending → Node",color:"var(--violet)"}, scaffold:{label:"Scaffolded",color:"var(--gold)"},
+  partial:{label:"Partial",color:"var(--orange)"}, todo:{label:"Not started",color:"var(--soft)"},
+};
+const SECTIONS = [
+  {title:"Backend — Django (ARCHIVED to archive/backend-django/ · reference spec only)", cols:["Area","What","Status"], rows:[
+    ["accounts","token auth, /me, preferences, register/login/logout","pending"],
+    ["catalog","Kalam, Verse, Rendition, Credit, Collection, Queue, SavedItem","pending"],
+    ["media","MediaAsset, encodings, upload sessions, transcode, manifest","pending"],
+    ["federation","ContentSource, MediaMirror, resolver, /directory/*","pending"],
+    ["community + admin","Submission, KalamRequest, review→apply canonical","pending"],
+    ["content + video_generation","Annotation, PublishedFile, render payload/task","pending"],
+    ["subsonic","/rest/ ping, getLicense, getLyricsBySongId, stream","pending"],
+  ]},
+  {title:"Frontend — apps/platform-web (stays unchanged)", cols:["Surface","Screens","Status"], rows:[
+    ["Foundation","tokens, API client, TanStack hooks, session, player, UI kit, router, PWA","done"],
+    ["Player / Wiki","Listen, Search, Kalam, Companion, Person, Collection, Library, Queues, Account, Auth","done"],
+    ["Studio","dashboard, intake, transcribe, timing, translate, context, submissions","built"],
+    ["Community / Admin","requests; review/approve, renders, publish","built"],
+  ]},
+  {title:"Infrastructure", cols:["Item","Detail","Status"], rows:[
+    ["apps/api scaffold","node:http + node:sqlite + TS (zero deps), /healthz, CORS expose headers","built"],
+    ["Local self-host mirror","serve media from disk + local MediaMirror; seed_local_media","pending"],
+    ["Cloudflare R2","media storage — config present, not provisioned","scaffold"],
+    ["Coolify deploy","Dockerfile + compose packaged (Django-era — revisit for Node)","partial"],
+  ]},
+];
+const DEFERRED = [
+  "SSR / pre-render for public SEO", "offline downloads", "Subsonic auth + full method set",
+  "a11y / RTL audit", "PWA icons", "automated mirror replication", "BullMQ render pipeline (Node)",
+];
+
+/* ============================= the migration checks ============================= */
+/* Each test: { name, verb, path, run?(async→{ok,msg}|{skip,msg}), mutating?, autoNone? } */
+let TOKEN = null;
+const GROUPS = [
+  {step:"Stage 1 · Scaffold", tests:[
+    {name:"Server is up", verb:"GET", path:"/healthz",
+     run:async()=>{const c=await call("/healthz"); return ok2xx(c)?{ok:true,msg:`HTTP ${c.status}`}:{ok:false,msg:c.msg||`HTTP ${c.status}`};}},
+    {name:"API base reachable", verb:"GET", path:AP+"/kalams/",
+     run:async()=>{const c=await call(AP+"/kalams/"); if(c.networkError)return{ok:false,msg:c.msg}; return c.status<500?{ok:true,msg:`reachable (HTTP ${c.status})`}:{ok:false,msg:`HTTP ${c.status}`};}},
+  ]},
+  {step:"Stage 2 · Media endpoint (§6)", tests:[
+    {name:"Full GET → 200 + audio/mpeg", verb:"GET", path:AUDIO,
+     run:async()=>{const c=await call(AUDIO); if(c.networkError)return{ok:false,msg:c.msg};
+       if(c.status!==200)return{ok:false,msg:`expected 200, got ${c.status}`};
+       const ct=c.headers.get("content-type")||"";
+       return ct.includes("audio/mpeg")?{ok:true,msg:`200 · ${ct}`}:{ok:false,msg:`type "${ct||"?"}" — want audio/mpeg`};}},
+    {name:"Accept-Ranges: bytes", verb:"GET", path:AUDIO,
+     run:async()=>{const c=await call(AUDIO); if(c.networkError)return{ok:false,msg:c.msg};
+       const ar=c.headers.get("accept-ranges");
+       if(ar==="bytes")return{ok:true,msg:"Accept-Ranges: bytes"};
+       if(ar==null)return{ok:false,msg:"header hidden (CORS?) — verify with curl -I"};
+       return{ok:false,msg:`Accept-Ranges: ${ar}`};}},
+    {name:"Range → 206 Partial", verb:"GET", path:AUDIO+" (Range 0-1023)",
+     run:async()=>{const c=await call(AUDIO,{headers:{Range:"bytes=0-1023"}}); if(c.networkError)return{ok:false,msg:c.msg};
+       if(c.status!==206)return{ok:false,msg:`expected 206, got ${c.status}`};
+       const cr=c.headers.get("content-range");
+       return{ok:true,msg:`206 · ${cr?("Content-Range "+cr):"(hidden by CORS)"}`};}},
+    {name:"Path traversal rejected", verb:"GET", path:"/media/%2e%2e%2f%2e%2e%2fpackage.json",
+     run:async()=>{const c=await call("/media/%2e%2e%2f%2e%2e%2fpackage.json"); if(c.networkError)return{ok:false,msg:c.msg};
+       return [400,403,404].includes(c.status)?{ok:true,msg:`blocked (HTTP ${c.status})`}:{ok:false,msg:`NOT blocked — HTTP ${c.status}`};}},
+    {name:"audio.mp3 plays inline (acceptance)", verb:"MEDIA", path:AUDIO,
+     run:()=>playMedia("audio", AUDIO)},
+    {name:"landscape.mp4 plays inline", verb:"MEDIA", path:VIDEO,
+     run:()=>playMedia("video", VIDEO)},
+  ]},
+  {step:"Stage 3 · SQL schema + seed", tests:[
+    {name:"Catalog seeded (≥1 kalam)", verb:"GET", path:AP+"/kalams/",
+     run:async()=>{const c=await call(AP+"/kalams/"); const p=paginated(c); if(!p.ok)return p;
+       return c.body.count>=1?{ok:true,msg:`${c.body.count} kalam(s)`}:{ok:false,msg:"0 kalams — seed didn’t run"};}},
+    {name:"Local mirror registered", verb:"GET", path:AP+"/directory/mirrors/",
+     run:async()=>{const c=await call(AP+"/directory/mirrors/"); const p=paginated(c); if(!p.ok)return p;
+       const local=(c.body.results||[]).find(m=>m.kind==="local");
+       return local?{ok:true,msg:`local "${local.slug||local.name}"`}:{ok:false,msg:"no local mirror"};}},
+    {name:"Sample rendition present", verb:"GET", path:AP+"/search/?q=Tanam",
+     run:async()=>{const c=await call(AP+"/search/?q=Tanam"); if(!ok2xx(c))return{ok:false,msg:c.msg||`HTTP ${c.status}`};
+       const r=c.body&&c.body.renditions;
+       return (Array.isArray(r)&&r.length)?{ok:true,msg:`found "${r[0].title||r[0].slug}"`}:{ok:false,msg:"not found"};}},
+  ]},
+  {step:"Stage 4 · Read endpoints (§5)", tests:[
+    {name:"GET /kalams/ paginated", verb:"GET", path:AP+"/kalams/",
+     run:async()=>paginated(await call(AP+"/kalams/"))},
+    {name:"Kalam detail shape + playback", verb:"GET", path:AP+"/kalams/{slug}/",
+     run:async()=>{const l=await call(AP+"/kalams/"); if(l.networkError)return{ok:false,msg:l.msg};
+       const slug=l.body&&l.body.results&&l.body.results[0]&&l.body.results[0].slug;
+       if(!slug)return{ok:false,msg:"no kalam to inspect"};
+       const d=await call(AP+`/kalams/${slug}/`); if(!ok2xx(d))return{ok:false,msg:`HTTP ${d.status}`};
+       const b=d.body||{}, miss=[];
+       if(!Array.isArray(b.verses))miss.push("verses[]");
+       if(!Array.isArray(b.credits))miss.push("credits[]");
+       if(!Array.isArray(b.renditions))miss.push("renditions[]");
+       if(miss.length)return{ok:false,msg:"missing "+miss.join(", ")};
+       if(b.renditions[0] && !b.renditions[0].playback)return{ok:false,msg:"rendition missing playback"};
+       return{ok:true,msg:`${b.verses.length} verses, ${b.renditions.length} renditions`};}},
+    {name:"Rendition playback manifest", verb:"GET", path:AP+"/renditions/{slug}/",
+     run:async()=>{const l=await call(AP+"/kalams/"); const ks=l.body&&l.body.results&&l.body.results[0]&&l.body.results[0].slug;
+       if(!ks)return{ok:false,msg:"no kalam"};
+       const d=await call(AP+`/kalams/${ks}/`); const rs=d.body&&d.body.renditions&&d.body.renditions[0]&&d.body.renditions[0].slug;
+       if(!rs)return{ok:false,msg:"no rendition"};
+       const r=await call(AP+`/renditions/${rs}/`); if(!ok2xx(r))return{ok:false,msg:`HTTP ${r.status}`};
+       const pm=r.body&&r.body.playback;
+       if(!pm||!Array.isArray(pm.variants))return{ok:false,msg:"no playback.variants[]"};
+       const v=pm.variants[0]; if(!v)return{ok:false,msg:"variants[] empty"};
+       if(!v.url)return{ok:false,msg:"variant missing url"};
+       if(!Array.isArray(v.mirrors))return{ok:false,msg:"variant missing mirrors[]"};
+       const m=v.mirrors[0]; const need=["mirror","name","kind","url","default_enabled","priority"];
+       const gap=m?need.filter(k=>!(k in m)):need;
+       return gap.length?{ok:false,msg:"MirrorUrl missing "+gap.join(", ")}:{ok:true,msg:`${pm.variants.length} variant(s), ${v.mirrors.length} mirror(s)`};}},
+    {name:"GET /people/ paginated", verb:"GET", path:AP+"/people/",
+     run:async()=>paginated(await call(AP+"/people/"))},
+    {name:"GET /collections/ paginated", verb:"GET", path:AP+"/collections/",
+     run:async()=>paginated(await call(AP+"/collections/"))},
+    {name:"GET /search/ grouped buckets", verb:"GET", path:AP+"/search/?q=a",
+     run:async()=>{const c=await call(AP+"/search/?q=a"); if(!ok2xx(c))return{ok:false,msg:c.msg||`HTTP ${c.status}`};
+       const b=c.body||{}, need=["kalams","people","renditions","collections"], gap=need.filter(k=>!Array.isArray(b[k]));
+       return gap.length?{ok:false,msg:"missing: "+gap.join(", ")}:{ok:true,msg:"all 4 buckets ✓"};}},
+    {name:"GET /directory/sources/", verb:"GET", path:AP+"/directory/sources/",
+     run:async()=>{const c=await call(AP+"/directory/sources/"); return ok2xx(c)?{ok:true,msg:`HTTP ${c.status}`}:{ok:false,msg:c.msg||`HTTP ${c.status}`};}},
+  ]},
+  {step:"Stage 5 · Auth + user-scoped", tests:[
+    {name:"POST /auth/login/ → token", verb:"POST", path:AP+"/auth/login/",
+     run:async()=>{const c=await call(AP+"/auth/login/",{method:"POST",body:{username:user(),password:pass()}});
+       if(c.networkError)return{ok:false,msg:c.msg};
+       if(!ok2xx(c))return{ok:false,msg:`HTTP ${c.status}`};
+       const t=c.body&&(c.body.token||c.body.key||c.body.access||c.body.auth_token);
+       if(t){TOKEN=t; return{ok:true,msg:"token received"};}
+       return{ok:false,msg:"no token field"};}},
+    {name:"GET /me/ profile shape", verb:"GET", path:AP+"/me/",
+     run:async()=>{const c=await call(AP+"/me/",{auth:true}); if(c.skip)return c;
+       if(!ok2xx(c))return{ok:false,msg:`HTTP ${c.status}`};
+       const b=c.body||{}, need=["id","username","role","trust_score"], gap=need.filter(k=>!(k in b));
+       return gap.length?{ok:false,msg:"missing "+gap.join(", ")}:{ok:true,msg:`${b.username} · ${b.role}`};}},
+    {name:"GET /me/preferences/", verb:"GET", path:AP+"/me/preferences/",
+     run:async()=>{const c=await call(AP+"/me/preferences/",{auth:true}); if(c.skip)return c;
+       return ok2xx(c)?{ok:true,msg:`HTTP ${c.status}`}:{ok:false,msg:`HTTP ${c.status}`};}},
+    {name:"GET /me/library/ paginated", verb:"GET", path:AP+"/me/library/",
+     run:async()=>{const c=await call(AP+"/me/library/",{auth:true}); return c.skip?c:paginated(c);}},
+    {name:"GET /me/queues/ paginated", verb:"GET", path:AP+"/me/queues/",
+     run:async()=>{const c=await call(AP+"/me/queues/",{auth:true}); return c.skip?c:paginated(c);}},
+    {name:"POST /auth/register/", verb:"POST", path:AP+"/auth/register/", mutating:true,
+     run:async()=>{const u="test_"+Date.now(); const c=await call(AP+"/auth/register/",{method:"POST",body:{username:u,password:"Test!2345",display_name:u}});
+       if(c.networkError)return{ok:false,msg:c.msg};
+       return ok2xx(c)?{ok:true,msg:`created "${u}"`}:{ok:false,msg:`HTTP ${c.status}`};}},
+    {name:"POST /auth/logout/", verb:"POST", path:AP+"/auth/logout/", mutating:true,
+     run:async()=>{const c=await call(AP+"/auth/logout/",{method:"POST",auth:true}); if(c.skip)return c;
+       return ok2xx(c)?{ok:true,msg:`HTTP ${c.status}`}:{ok:false,msg:`HTTP ${c.status}`};}},
+  ]},
+  {step:"Stage 6 · Contribution + admin", tests:[
+    {name:"GET /submissions/", verb:"GET", path:AP+"/submissions/",
+     run:async()=>{const c=await call(AP+"/submissions/",{auth:true}); return c.skip?c:paginatedOrGated(c);}},
+    {name:"GET /community/requests/", verb:"GET", path:AP+"/community/requests/",
+     run:async()=>paginatedOrGated(await call(AP+"/community/requests/"))},
+    {name:"GET /admin/review/submissions/", verb:"GET", path:AP+"/admin/review/submissions/",
+     run:async()=>{const c=await call(AP+"/admin/review/submissions/",{auth:true}); return c.skip?c:paginatedOrGated(c);}},
+    {name:"GET /annotations/", verb:"GET", path:AP+"/annotations/",
+     run:async()=>paginatedOrGated(await call(AP+"/annotations/"))},
+    {name:"GET /admin/published/", verb:"GET", path:AP+"/admin/published/",
+     run:async()=>{const c=await call(AP+"/admin/published/",{auth:true}); return c.skip?c:paginatedOrGated(c);}},
+    {name:"GET /admin/renders/", verb:"GET", path:AP+"/admin/renders/",
+     run:async()=>{const c=await call(AP+"/admin/renders/",{auth:true}); return c.skip?c:paginatedOrGated(c);}},
+    {name:"GET /media/assets/", verb:"GET", path:AP+"/media/assets/",
+     run:async()=>{const c=await call(AP+"/media/assets/",{auth:true}); return c.skip?c:paginatedOrGated(c);}},
+    {name:"GET /media/upload-sessions/", verb:"GET", path:AP+"/media/upload-sessions/",
+     run:async()=>{const c=await call(AP+"/media/upload-sessions/",{auth:true}); return c.skip?c:paginatedOrGated(c);}},
+  ]},
+  {step:"Stage 7 · Later (deferred)", tests:[
+    {name:"OpenSubsonic /rest/ping", verb:"GET", path:"/rest/ping.view?f=json",
+     run:async()=>{const c=await call("/rest/ping.view?f=json"); if(c.networkError)return{ok:false,msg:c.msg};
+       return ok2xx(c)?{ok:true,msg:`reachable (HTTP ${c.status})`}:{ok:false,msg:`HTTP ${c.status}`};}},
+    {name:"BullMQ render queue consumes a job", verb:"MANUAL", path:"—", autoNone:true},
+    {name:"Postgres prod connection", verb:"MANUAL", path:"—", autoNone:true},
+    {name:"Deploy (Coolify) reachable", verb:"MANUAL", path:"—", autoNone:true},
+  ]},
+];
+
+/* ============================= engine ============================= */
+const $ = id => document.getElementById(id);
+const el = (t,c,h)=>{const e=document.createElement(t); if(c)e.className=c; if(h!=null)e.innerHTML=h; return e;};
+const esc = s => String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const hhmm = ()=> new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+const cid = (gi,ti)=>`s${gi}_${ti}`;
+GROUPS.forEach((g,gi)=>g.tests.forEach((t,ti)=>{ t._id=cid(gi,ti); t._gi=gi; }));
+
+// persisted state
+const LS = {base:"dervaish.test.base", user:"dervaish.test.user", pass:"dervaish.test.pass",
+            manual:"dervaish.manual", auto:"dervaish.auto"};
+let manual = JSON.parse(localStorage.getItem(LS.manual) || "{}");   // id -> {status, notes}
+let auto   = JSON.parse(localStorage.getItem(LS.auto)   || "{}");   // id -> {cls, msg, at}
+const openNotes = new Set();
+let stageFilter = "all";
+let fileHandle = null;
+const saveManual = ()=>localStorage.setItem(LS.manual, JSON.stringify(manual));
+const saveAuto   = ()=>localStorage.setItem(LS.auto,   JSON.stringify(auto));
+
+// config inputs
+const cB=$("cfgBase"), cU=$("cfgUser"), cP=$("cfgPass");
+cB.value = localStorage.getItem(LS.base) || "http://localhost:8000";
+cU.value = localStorage.getItem(LS.user) || "demo";
+cP.value = localStorage.getItem(LS.pass) || "";
+cB.oninput=()=>localStorage.setItem(LS.base,cB.value.trim());
+cU.oninput=()=>localStorage.setItem(LS.user,cU.value.trim());
+cP.oninput=()=>localStorage.setItem(LS.pass,cP.value);
+const base = ()=> (cB.value.trim()||"http://localhost:8000").replace(/\/+$/,"");
+const user = ()=> cU.value.trim();
+const pass = ()=> cP.value;
+
+// http
+async function call(path, {method="GET", headers={}, auth=false, body=null}={}){
+  const h=Object.assign({}, headers);
+  if(auth){ if(!TOKEN) return {skip:true,msg:"no token — run login first"}; h["Authorization"]="Token "+TOKEN; }
+  const opts={method,headers:h,mode:"cors"};
+  if(body!=null){ h["Content-Type"]="application/json"; opts.body=JSON.stringify(body); }
+  try{
+    const res=await fetch(base()+path,opts);
+    const ct=res.headers.get("content-type")||""; let data=null;
+    try{ data = ct.includes("json") ? await res.json() : await res.text(); }catch(e){}
+    return {status:res.status, headers:res.headers, body:data};
+  }catch(e){ return {networkError:true, msg:"network/CORS — "+(e.message||e)}; }
+}
+const ok2xx = c => c.status>=200 && c.status<300;
+function paginated(c){
+  if(!ok2xx(c)) return {ok:false,msg:`HTTP ${c.status}`};
+  const b=c.body; if(!b||typeof b!=="object") return {ok:false,msg:"no JSON body"};
+  return ("count" in b && Array.isArray(b.results)) ? {ok:true,msg:`count ${b.count}, ${b.results.length} rows`}
+    : {ok:false,msg:"missing {count, results[]}"};
+}
+function paginatedOrGated(c){
+  if(c.status===401||c.status===403) return {ok:true,msg:`route exists · gated (HTTP ${c.status})`};
+  return paginated(c);
+}
+function playMedia(kind, path){
+  return new Promise(resolve=>{
+    const m = kind==="video" ? document.createElement("video") : document.createElement("audio");
+    m.preload="metadata"; m.muted=true; let done=false;
+    const fin=r=>{ if(done)return; done=true; clearTimeout(to); resolve(r); };
+    const to=setTimeout(()=>fin({ok:false,msg:"timeout — no metadata in 8s"}),8000);
+    m.addEventListener("loadedmetadata",()=>fin(
+      m.duration>0?{ok:true,msg:`plays inline · ${m.duration.toFixed(1)}s`}:{ok:false,msg:"duration 0 — the 0:00 bug"}));
+    m.addEventListener("error",()=>fin({ok:false,msg:"media error (NETWORK/DECODE/SRC)"}));
+    m.src=base()+path;
+  });
+}
+
+// automated runners
+async function runOne(t){
+  auto[t._id]={cls:"r-run",msg:"running…",at:""}; saveAuto(); renderBoard();
+  let r; try{ r=await t.run(); }catch(e){ r={ok:false,msg:e.message||String(e)}; }
+  let cls,msg;
+  if(r&&r.skip){cls="r-skip";msg="skipped — "+(r.msg||"");}
+  else if(r&&r.ok){cls="r-pass";msg=r.msg||"pass";}
+  else {cls="r-fail";msg=(r&&r.msg)||"fail";}
+  auto[t._id]={cls,msg,at:hhmm()}; saveAuto(); renderBoard();
+}
+async function runMany(tests){ for(const t of tests){ await runOne(t); } }
+
+// manual + notes
+function setManual(id,val){ manual[id]=manual[id]||{}; manual[id].status=(manual[id].status===val?"":val); saveManual(); renderBoard(); }
+function setNotes(id,text){ manual[id]=manual[id]||{}; manual[id].notes=text; saveManual(); }
+
+/* ============================= render ============================= */
+const COLS = [
+  {key:"todo",label:"To verify",cls:"c-todo"},
+  {key:"auto",label:"Automated ✓",cls:"c-auto"},
+  {key:"manual",label:"Manual ✓",cls:"c-manual"},
+  {key:"done",label:"Done ✓✓",cls:"c-done"},
+];
+function placement(t){
+  const a=auto[t._id], m=manual[t._id]||{};
+  const aP=a&&a.cls==="r-pass", mP=m.status==="pass";
+  if(aP&&mP) return "done"; if(mP) return "manual"; if(aP) return "auto"; return "todo";
+}
+function stateClass(t){
+  const a=auto[t._id], m=manual[t._id]||{};
+  const aP=a&&a.cls==="r-pass", aF=a&&a.cls==="r-fail", mP=m.status==="pass", mF=m.status==="fail";
+  if(aP&&mP) return "s-done"; if(mP) return "s-manual"; if(aP) return "s-auto"; if(aF||mF) return "s-fail"; return "s-todo";
+}
+function buildCard(t){
+  const id=t._id, a=auto[id], m=manual[id]||{};
+  const card=el("div","kcard "+stateClass(t));
+  card.appendChild(el("div","kc-top",
+    `<span class="verb">${t.verb}</span><span class="kc-title">${esc(t.name)}${t.mutating?' <span class="mutflag" title="mutates data — excluded from Run all">⚠</span>':''}</span>`));
+  card.appendChild(el("code","kc-ep", esc(t.path||"")));
+  // automated
+  const ar=el("div","kc-auto");
+  if(t.autoNone){ ar.innerHTML='<span class="r-info">automated: n/a (manual only)</span>'; }
+  else{
+    const rb=el("button","btn sm","Run"); rb.onclick=()=>runOne(t); ar.appendChild(rb);
+    ar.appendChild(el("span","res "+((a&&a.cls)||"r-idle"), a? esc(a.msg)+(a.at?` · ${a.at}`:"") : "—"));
+  }
+  card.appendChild(ar);
+  // manual
+  const mr=el("div","kc-manual"); mr.appendChild(el("span","mlbl","Manual"));
+  [["pass","Pass"],["fail","Fail"],["na","N/A"]].forEach(([v,lab])=>{
+    const b=el("button","mbtn "+v+((m.status===v)?" active":""),lab); b.onclick=()=>setManual(id,v); mr.appendChild(b);
+  });
+  card.appendChild(mr);
+  // notes
+  const hasNote = m.notes && m.notes.trim();
+  const nt=el("button","kc-note-toggle", hasNote?"📝 note":"＋ note");
+  const ta=el("textarea","kc-notes"); ta.value=m.notes||""; ta.placeholder="manual check notes…";
+  const open = openNotes.has(id) || hasNote;
+  if(!open) ta.classList.add("hidden");
+  nt.onclick=()=>{ if(ta.classList.contains("hidden")){ta.classList.remove("hidden");openNotes.add(id);ta.focus();}
+    else {ta.classList.add("hidden");openNotes.delete(id);} };
+  ta.oninput=()=>{ setNotes(id,ta.value); nt.textContent=ta.value.trim()?"📝 note":"＋ note"; };
+  card.appendChild(nt); card.appendChild(ta);
+  return card;
+}
+function renderBoard(){
+  const board=$("board"); board.innerHTML="";
+  const head=el("div","colhead");
+  COLS.forEach(c=>head.appendChild(el("div","colhead-cell "+c.cls,c.label)));
+  board.appendChild(head);
+  let ct={auto:0,man:0,done:0,fail:0,total:0};
+  GROUPS.forEach((g,gi)=>{
+    g.tests.forEach(t=>{ ct.total++; const p=placement(t); if(p==="done")ct.done++; else if(p==="auto")ct.auto++; else if(p==="manual")ct.man++;
+      if(stateClass(t)==="s-fail")ct.fail++; });
+    if(stageFilter!=="all" && String(gi)!==stageFilter) return;
+    const lane=el("div","lane");
+    const lh=el("div","lane-head");
+    lh.appendChild(el("span","lane-title",g.step));
+    let dn=g.tests.filter(t=>placement(t)==="done").length;
+    lh.appendChild(el("span","lane-mini",`${dn}/${g.tests.length} done`));
+    const rs=el("button","btn sm","Run stage"); rs.onclick=()=>runMany(g.tests.filter(t=>!t.autoNone&&!t.mutating)); lh.appendChild(rs);
+    lane.appendChild(lh);
+    const grid=el("div","kgrid"); const cols={};
+    COLS.forEach(c=>{ cols[c.key]=el("div","kcol"); });
+    g.tests.forEach(t=> cols[placement(t)].appendChild(buildCard(t)) );
+    COLS.forEach(c=>{ if(!cols[c.key].children.length) cols[c.key].appendChild(el("div","emptycol","—")); grid.appendChild(cols[c.key]); });
+    lane.appendChild(grid); board.appendChild(lane);
+  });
+  writeSummary(ct); writeProgress(ct);
+}
+function writeSummary(ct){
+  $("tsum").innerHTML =
+    `<span><b style="color:var(--green)">${ct.done}</b> done (both)</span>`+
+    `<span><b style="color:var(--blue)">${ct.auto}</b> automated only</span>`+
+    `<span><b style="color:var(--violet)">${ct.man}</b> manual only</span>`+
+    `<span><b style="color:var(--danger)">${ct.fail}</b> failing</span>`+
+    `<span class="soft">${ct.total} checks total</span>`;
+}
+function writeProgress(ct){
+  const bar=$("progress"); bar.innerHTML="";
+  const seg=(n,color)=>{ if(!n)return; const s=el("span"); s.style.width=(n/ct.total*100)+"%"; s.style.background=color; bar.appendChild(s); };
+  seg(ct.done,"var(--green)"); seg(ct.man,"var(--violet)"); seg(ct.auto,"var(--blue)");
+  const rest=ct.total-ct.done-ct.man-ct.auto; seg(rest,"var(--surface3)");
+  $("totals").innerHTML =
+    `<div class="t"><span class="dot" style="background:var(--green)"></span>Done ${ct.done}</div>`+
+    `<div class="t"><span class="dot" style="background:var(--blue)"></span>Automated ${ct.auto}</div>`+
+    `<div class="t"><span class="dot" style="background:var(--violet)"></span>Manual ${ct.man}</div>`+
+    `<div class="t"><span class="dot" style="background:var(--danger)"></span>Failing ${ct.fail}</div>`;
+}
+
+// stage filter chips
+(function(){
+  const bar=$("stageFilter");
+  const mkChip=(key,label)=>{ const c=el("button","chip"+(key===stageFilter?" active":""),label);
+    c.onclick=()=>{ stageFilter=key; [...bar.children].forEach(x=>x.classList.remove("active")); c.classList.add("active"); renderBoard(); };
+    bar.appendChild(c); };
+  mkChip("all","All stages");
+  GROUPS.forEach((g,gi)=> mkChip(String(gi), g.step.replace(/ ·.*/,"")) );
+})();
+
+/* ============================= markdown export ============================= */
+function buildMd(){
+  const now=new Date().toISOString();
+  let out=`# Dervaish migration — manual check log\n\n_Exported: ${now}_  ·  _API base: ${base()}_\n`;
+  GROUPS.forEach((g,gi)=>{
+    out+=`\n## ${g.step}\n\n`;
+    g.tests.forEach((t,ti)=>{
+      const id=cid(gi,ti), m=manual[id]||{}, a=auto[id];
+      const done=(a&&a.cls==="r-pass")&&m.status==="pass";
+      out+=`- [${done?"x":" "}] **${t.name}** — \`${t.verb} ${t.path||""}\`\n`;
+      const autoLine = t.autoNone ? "n/a (manual only)"
+        : (a ? `${a.cls==="r-pass"?"✓":a.cls==="r-fail"?"✗":"–"} ${a.msg}${a.at?` (${a.at})`:""}` : "not run");
+      out+=`  - Automated: ${autoLine}\n`;
+      out+=`  - Manual: ${m.status?m.status.toUpperCase():"—"}\n`;
+      if(m.notes && m.notes.trim()) out+=`  - Notes: ${m.notes.replace(/\r?\n/g,"  ")}\n`;
+    });
+  });
+  return out;
+}
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2200); }
+function downloadMd(md){
+  const blob=new Blob([md],{type:"text/markdown"}); const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download="manual-checks.md"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000); toast("Downloaded manual-checks.md");
+}
+async function saveMd(){
+  const md=buildMd();
+  if(window.showSaveFilePicker){
+    try{
+      if(!fileHandle){ fileHandle=await window.showSaveFilePicker({suggestedName:"manual-checks.md",
+        types:[{description:"Markdown",accept:{"text/markdown":[".md"]}}]}); }
+      const w=await fileHandle.createWritable(); await w.write(md); await w.close();
+      toast("Saved to "+fileHandle.name); return;
+    }catch(e){ if(e && e.name==="AbortError") return; }
+  }
+  downloadMd(md);
+}
+$("saveMd").onclick=saveMd;
+$("downloadMd").onclick=()=>downloadMd(buildMd());
+$("runAll").onclick=async()=>{
+  const b=$("runAll"); b.disabled=true; b.textContent="Running…"; TOKEN=null;
+  await runMany(GROUPS.flatMap(g=>g.tests).filter(t=>!t.autoNone && !t.mutating));
+  b.disabled=false; b.textContent="Run all automated";
+};
+$("resetAuto").onclick=()=>{ auto={}; saveAuto(); TOKEN=null; renderBoard(); toast("Automated results cleared"); };
+
+/* ============================= reference tables + boot ============================= */
+$("updated").textContent = UPDATED;
+function pill(st){ const s=S[st]; const p=el("span","pill",`<span class="dot" style="background:${s.color}"></span>${s.label}`); p.style.color=s.color; return p; }
+(function(){
+  const host=$("sections");
+  SECTIONS.forEach(sec=>{
+    host.appendChild(el("h2",null,sec.title));
+    const tbl=el("table"), thead=el("thead"), tr=el("tr");
+    sec.cols.forEach(c=>tr.appendChild(el("th",null,c))); thead.appendChild(tr); tbl.appendChild(thead);
+    const tb=el("tbody");
+    sec.rows.forEach(r=>{ const row=el("tr");
+      const a=el("td","area",r[0]), w=el("td",null,r[1]), s=el("td","st"); s.appendChild(pill(r[2]));
+      row.append(a,w,s); tb.appendChild(row); });
+    tbl.appendChild(tb); host.appendChild(tbl);
+  });
+})();
+$("deferred").innerHTML = DEFERRED.map(d=>`<li>${d}</li>`).join("");
+
+renderBoard();
+</script>
+</body>
+</html>
